@@ -8,13 +8,13 @@ The following commands will install the required libraries:
 sudo apt-get install python-dev
 sudo apt-get install python-qt
 
-cd icarra2/installed/sgmlop
+Download sgmlop from http://effbot.org/zone/sgmlop-index.htm
 sudo python setup.py install
 
-cd icarra2/installed/python-jsonrpc
+Download python-jsonrpc from http://json-rpc.org/wiki/python-json-rpc
 sudo python setup.py install
 
-cd icarra2/installed/feedparser
+Download feedparser from http://www.feedparser.org/
 sudo python setup.py install
 
 Sqlite3 is a useful tool that can be used to view Icarra's databases:
@@ -29,3 +29,17 @@ Download and install PyQt from Riverbank computing.  The most recent url is http
 You need to make sure the PyQt DLLs are in your path.  If you are using the bashs shell under cygwin the command might look like this:
 
     export PATH="{$PATH}:/cygdrive/c/Python26/Lib/site-packages/PyQt4/bin"
+
+Download sgmlop from http://effbot.org/zone/sgmlop-index.htm
+sudo python setup.py install
+
+Download python-jsonrpc from http://json-rpc.org/wiki/python-json-rpc
+sudo python setup.py install
+
+Download feedparser from http://www.feedparser.org/
+sudo python setup.py install
+
+OS X
+----
+
+Same instructions as windows.  Do not need to set PATH.
