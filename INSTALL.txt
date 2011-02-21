@@ -1,0 +1,31 @@
+Ubuntu
+------
+
+Icarra requires the PyQt GUI library.  Ubuntu will install the required libraries using apt-get.  PyQt may also be installed from source in which case two separate libraries must be installed: SIP (http://www.riverbankcomputing.co.uk/software/sip/download) and PyQt (http://www.riverbankcomputing.co.uk/software/pyqt/download).
+
+The following commands will install the required libraries:
+
+sudo apt-get install python-dev
+sudo apt-get install python-qt
+
+cd icarra2/installed/sgmlop
+sudo python setup.py install
+
+cd icarra2/installed/python-jsonrpc
+sudo python setup.py install
+
+cd icarra2/installed/feedparser
+sudo python setup.py install
+
+Sqlite3 is a useful tool that can be used to view Icarra's databases:
+
+sudo apt-get install sqlite3
+
+Windows
+-------
+
+Download and install PyQt from Riverbank computing.  The most recent url is http://www.riverbankcomputing.co.uk/software/pyqt/download.  You can build from sourec or use the installer.  If you choose to download the installer make sure you pick the correct installer for your version of python.
+
+You need to make sure the PyQt DLLs are in your path.  If you are using the bashs shell under cygwin the command might look like this:
+
+    export PATH="{$PATH}:/cygdrive/c/Python26/Lib/site-packages/PyQt4/bin"

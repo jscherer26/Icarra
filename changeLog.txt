@@ -1,0 +1,177 @@
+TODO:
+- After editing transactions, go back to right place when sorted in reverse
+- Show best guesses for hard to parse transactions
+- Check for read only file system (run from .dmg)
+
+0.4.4
+- Improved news tool
+
+0.4.3
+- Added advanced options checkbox to settings
+- Added support for multiple accounts per brokerage
+- Fixed bug when testing import with multiple accounts
+- Showed that account is optional, added Update Account button
+- Fixed bug when deleting portfolios
+- Disallow deleting S&P 500
+
+0.4.2
+- Added Import Transactions menu to Portfolios
+- Added error message when can't connect to institution
+- Fixed critical error with charting with no portfolio data present
+- Improved startup process when can't connect to internet
+- Improved robustness when loading plugins with errors
+- Prevented Sample Portfolio from being created multiple times
+
+0.4.1
+- Fixed critical errors with threaded DB use
+
+0.4.0
+- Now distributed using installers
+- Added a tutorial and a sample portfolio
+- Fixed bug when deleting portfolios
+- Fixed bug when creating combined or benchmark portfolios
+- Added support for Penson Financial Services, E*Trade, USAA brokerages
+- Added subtypes for dividend (capital gains, qualified, etc.)
+- Made OFX parsing more robust
+- Allowed user to choose charts for summary tool
+- Removed tools menu (confusing)
+
+0.3.2
+- Rewrote charts using QT.  Looks nicer, doesn't require extra 3rd party tool
+- Calculates cash performance due to dividends
+- Tweaked output of Summary page
+- Faster downloading of stock data
+- Allocation page shows total value
+- Fixed bug with position checks incorrectly adding shares when a buy comes a day later than the check
+- Fixed bug with reading stock data at incorrect date
+- Fixed bug when editing spinoff transactions
+
+0.3.1
+- Updated website
+- Show deleted transactions, allow editing, can undelete
+- Wait to download stock data when importing a new position or importing transactions
+- Fixed incorrect tool selection when creating new portfolio
+- Show wait cursors
+- Fixed bug with downloading news
+- Fixed minor display bug with error checking
+- Split transactions with fractional shares round down
+- Show portfolio history data in Stock Data even when no stock data is available
+- Fixed minor bug with cash shares not equalling cash value
+
+0.3.0
+=======
+- Converted GUI toolking to use PyQt
+- Converted database to use python builtin sqlite3 library
+- Fixed bug with setting stock name
+- Added better notes for scottrade
+- Don't replace \n with \r\n on windows when downloading OFX data
+- Fixed a few small bugs when checking for portfolio errors
+- Fixed charting bugs where buys/sells could show up in wrong place
+
+0.2.3
+- Improved version checking
+- Fixed bug in the transactions tab that can cause a crash
+- Added ticker tool tips that show stock name
+- Improved experience for first time users
+
+0.2.2
+- Stock data is automatically downloaded in the background.  Portfolios are automatically updated when new data becomes available
+- Added Stock Data tool
+- Added Icarra Ticker, ticker suggest
+- Fixed performance of benchmark since inception (showed portfolio performance)
+- Bug fix for total portfolio performance
+- Bug fix for combined portfolio transaction ordering
+- Fixed bug with combined portfolio calculation
+- Further performance improvement for drawing tabular data
+- Several minor bug fixes
+e Fixed split checking bug in error check panel
+- Fixed bug with formatting dates when rebuilding portfolios
+
+0.2.1
+- Added plugins for brokerages and tools
+- Added version update notification
+- Added benchmark to performance tool
+- Show brokerage notes in settings panel
+- Use buy/sell price for stocks that do not have data
+- Polished interface
+- Fixed bugs when portfolio is empty
+- Fixed bug where program would hang when importing transactions
+- Fixed grid rendering on windows
+- Improved performance of outputting grid data (transactions, news, etc)
+- Improved performance of rebuilding benchmark portfolios
+- Cleaned up tool resizing
+
+0.2.0
+- Official open source release
+- Support for python 2.5
+- Support for linux
+- Added dashed lines on charts when no shares are owned
+- Added vanguard
+- Various bug fixes for incoming transfers
+
+0.1.5
+- Added ability to create user benchmark portfolios
+- Added "Add Position" and "Delete Position" to Allocation page
+- Added "Include Dividends" checkbox to performance page
+- Added additional dates to performance tool
+- Added One Month Movers to summary
+- Added support for invexpense, transfer out
+- Added error if stock data is not found
+- Removed % from summary charts
+- No longer uses unnecessary data points for charts
+- Error message when split denominator is 0
+- Moved charts to tools, Error Check to advanced tools
+- Improved window alignment, makes better use of space
+- Fixed chart bug when benchmark is not S&P 500
+- Fixed bug when .db-journal files were tried to be read as portfolios
+- Fixed bug with scrollbars not updating when switching transactions
+
+0.1.4
+- Made split transactions easier to enter
+- Added sharebuilder.com as sharebuilder broker id
+- Improved display on windows
+- Fixed bug with total being deleted from transaction editor
+- Fixed bug with deleted transactions showing up in transaction list
+- Fixed bug with rendering news when changing its rating
+- Fixed news rendering on windows
+- Added error messages when entering the split transaction
+
+0.1.3
+- Better parsing support for wells fargo ofx files
+- Added Transfer In transaction
+- Benchmark portfolios may no longer have their own benchmarks
+- Added handling of expense
+- In OFX import, transactions with negative income are turned into expense
+- Fixed bug with preference values not returning ints when they should
+- Fixed bug where deleted transctions affect cash in
+- Fixed bug with stock basis when transactions are on the same day
+- Fixed bug where auto transactions can cause transaction forward/backward arrows to be incorrectly displayed
+- Fixed bug when changing tools and rebullding where new tool is not shown
+
+0.1.2
+- Added support for importing ofx transactions from brokerages with multiple accounts
+- Added extra output when cannot open an ofx connection
+- Added wells fargo support.  Does it work?
+- Fixed bug where start of performance calculation uses closing price not purchase price
+- Updated New Transaction dialog to refresh labels, make them bold
+- Fixed bug with Rebuild all Portfolios not finishing correctly
+- Fixed bug in allocation where invalid chars cause a crash
+- Fixed bug in allocation where values don't redraw automatically
+- Removed busy cursor since it's unreliable on windows
+- Fixed bug where benchmarks are not rebuilt the first time
+- Fixed bug where stock tickers are not saved as uppercase
+- Fixed bug for unbinding events when exiting the GUI
+- Fixed bug in import transactions where ticker was not read
+
+0.1.1
+- Added windows support
+- Fixed bug in allocation panel if portfolio has never been built.
+- Fixed bug that begins stocks with some shares that should have been sold.  This was a bug in the position check.
+- Added dirty flag that automatically rebuilds portfolios
+- On initial install, rebuild S&P 500 and show summary
+- Fixed bug where wide tables do not display correctly
+- Fixed bug where wide tables do not have their alternate colors redrawn correctly
+- Added ofx debug option
+
+0.1.0
+- Initial release for OS X
