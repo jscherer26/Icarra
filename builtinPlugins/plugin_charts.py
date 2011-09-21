@@ -139,33 +139,44 @@ class ChartsWidget(QWidget):
 		else:
 			self.period.setCurrentIndex(self.periods.index("Portfolio Inception"))
 		horiz.addWidget(self.period)
-		self.connect(self.period, SIGNAL("currentIndexChanged(int)"), self.newPeriod)
+
+		horiz2.addWidget(QLabel("Type:"))
+		self.chartType = QComboBox()
+		self.chartTypes = chart.getChartTypes(p)
+		self.chartType.addItems(self.chartTypes)
+		type = p.portPrefs.getChartType()
+		if type in self.chartTypes:
+			self.chartType.setCurrentIndex(self.chartTypes.index(type))
+		horiz2.addWidget(self.chartType)
 
 		self.splitCheckbox = QCheckBox("Price")
 		self.splitCheckbox.setChecked(p.portPrefs.getPositionIncSplits())
 		horiz2.addWidget(self.splitCheckbox)
-		self.connect(self.splitCheckbox, SIGNAL("stateChanged(int)"), self.toggleSplit)
 
 		self.dividendCheckbox = QCheckBox("Dividends")
 		self.dividendCheckbox.setChecked(p.portPrefs.getPositionIncDividends())
 		horiz2.addWidget(self.dividendCheckbox)
-		self.connect(self.dividendCheckbox, SIGNAL("stateChanged(int)"), self.toggleDividend)
 
 		self.feeCheckbox = QCheckBox("Fees")
 		self.feeCheckbox.setChecked(p.portPrefs.getPositionIncFees())
 		horiz2.addWidget(self.feeCheckbox)
-		self.connect(self.feeCheckbox, SIGNAL("stateChanged(int)"), self.toggleFee)
 
 		self.benchmarkCheckbox = QCheckBox("Benchmark")
-		if p.isBenchmark():
-			self.benchmarkCheckbox.setEnabled(False)
-		else:
-			self.benchmarkCheckbox.setChecked(p.portPrefs.getPositionIncBenchmark())
 		horiz2.addWidget(self.benchmarkCheckbox)
-		self.connect(self.benchmarkCheckbox, SIGNAL("stateChanged(int)"), self.toggleBenchmark)
-		
+
+		# Update checkboxes based on chart type
+		self.newType(False)
+
 		horiz.addStretch(1000)
 		horiz2.addStretch(1000)
+
+		# Connect signals after newType is called (updates checkboxes)
+		self.connect(self.period, SIGNAL("currentIndexChanged(int)"), self.newPeriod)
+		self.connect(self.chartType, SIGNAL("currentIndexChanged(int)"), self.newType)
+		self.connect(self.splitCheckbox, SIGNAL("stateChanged(int)"), self.toggleSplit)
+		self.connect(self.dividendCheckbox, SIGNAL("stateChanged(int)"), self.toggleDividend)
+		self.connect(self.feeCheckbox, SIGNAL("stateChanged(int)"), self.toggleFee)
+		self.connect(self.benchmarkCheckbox, SIGNAL("stateChanged(int)"), self.toggleBenchmark)
 
 		# Create price data
 		self.chart = ChartWidget()
@@ -179,45 +190,38 @@ class ChartsWidget(QWidget):
 		
 		period = self.periods[self.period.currentIndex()]
 		if period == "One Week":
-			startDate = datetime.datetime.now() - datetime.timedelta(7)
+			startDate = chart.oneWeek
 		elif period == "One Month":
-			startDate = datetime.datetime.now() - datetime.timedelta(31)
+			startDate = chart.oneMonth
 		elif period == "Three Months":
-			startDate = datetime.datetime.now() - datetime.timedelta(90)
+			startDate = chart.threeMonths
 		elif period == "One Year":
-			startDate = datetime.datetime.now()
-			startDate = datetime.datetime(startDate.year - 1, startDate.month, startDate.day)
+			startDate = chart.oneYear
 		elif period == "Two Years":
-			startDate = datetime.datetime.now()
-			startDate = datetime.datetime(startDate.year - 2, startDate.month, startDate.day)
+			startDate = chart.twoYears
 		elif period == "Three Years":
-			startDate = datetime.datetime.now()
-			startDate = datetime.datetime(startDate.year - 3, startDate.month, startDate.day)
+			startDate = chart.threeYears
 		elif period == "Five Years":
-			startDate = datetime.datetime.now()
-			startDate = datetime.datetime(startDate.year - 5, startDate.month, startDate.day)
+			startDate = chart.fiveYears
 		elif period == "Ten Years":
-			startDate = datetime.datetime.now()
-			startDate = datetime.datetime(startDate.year - 10, startDate.month, startDate.day)
+			startDate = chart.tenYears
 		elif period == "Portfolio Inception":
-			startDate = p.getStartDate()
+			startDate = chart.portfolioInception
 		else:
-			firstLast = p.getPositionFirstLast(p.getLastTicker())
-			if firstLast:
-				startDate = firstLast[0]
-			else:
-				startDate = p.getStartDate()
+			startDate = chart.positionInception
 		
 		# need to unconvert for some reason
 		selection = p.getLastTicker().encode("utf-8")
+
+		chartType = self.chartTypes[self.chartType.currentIndex()].lower()
 		
-		p.chart(
+		p.drawChart(
 			self.chart,
 			self.app.stockData,
 			p.getLastTicker(),
 			startDate,
-			doTransactions = True,
 			doGradient = True,
+			chartType = chartType,
 			doSplit = self.splitCheckbox.isChecked(),
 			doDividend = self.dividendCheckbox.isChecked(),
 			doFee = self.feeCheckbox.isChecked(),
@@ -258,7 +262,33 @@ class ChartsWidget(QWidget):
 		self.app.portfolio.setLastTicker(ticker)
 
 		self.redrawChart()
-	
+
+	def newType(self, event):
+		type = self.chartTypes[self.chartType.currentIndex()]
+		self.app.portfolio.portPrefs.setChartType(type)
+
+		if type == "Value" or type == "Transactions":
+			self.splitCheckbox.setDisabled(True)
+			self.dividendCheckbox.setDisabled(True)
+			self.feeCheckbox.setDisabled(True)
+		else:
+			self.splitCheckbox.setEnabled(True)
+			self.dividendCheckbox.setEnabled(True)
+			self.feeCheckbox.setEnabled(True)
+
+		if self.app.portfolio.isBenchmark():
+			self.benchmarkCheckbox.setEnabled(False)
+		elif self.app.portfolio.isBank():
+			self.benchmarkCheckbox.setEnabled(False)
+			self.splitCheckbox.setEnabled(False)
+			self.dividendCheckbox.setEnabled(False)
+			self.feeCheckbox.setEnabled(False)
+		else:
+			self.benchmarkCheckbox.setChecked(self.app.portfolio.portPrefs.getPositionIncBenchmark())
+
+		if not event is False:
+			self.redrawChart()
+
 	def newPeriod(self, event):
 		period = self.periods[self.period.currentIndex()]
 		self.app.portfolio.portPrefs.setPositionPeriod(period)

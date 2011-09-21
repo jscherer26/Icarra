@@ -45,6 +45,9 @@ class Plugin(PluginBase):
 	def version(self):
 		return (1, 0, 0)
 
+	def forBank(self):
+		return False
+
 	def initialize(self):
 		pass
 
@@ -73,16 +76,24 @@ class StockDataModel(EditGridModel):
 		else:
 			cols = 8
 		
+		app = appGlobal.getApp()
+		positionData = app.portfolio.getPositionHistory(self.ticker)
+		haveOptions = False
+		for d in positionData:
+			if positionData[d]["options"]:
+				haveOptions = True
+				break
+
 		# Create columns
-		cols = ["Date"]
+		cols = ["Date", "Shares"]
+		if haveOptions:
+			cols.append("Options")
 		if self.dividends:
-			cols.append("Shares")
 			cols.append("Value")
 			cols.append("Type")
 			cols.append("Amount")
 			cols.append("Total")
 		else:
-			cols.append("Shares")
 			cols.append("Value")
 			cols.append("Open")
 			cols.append("High")
@@ -96,8 +107,6 @@ class StockDataModel(EditGridModel):
 		self.splitMap = {}
 		row = 0
 		
-		app = appGlobal.getApp()
-		positionData = app.portfolio.getPositionHistory(self.ticker)
 		stockData = []
 		if self.dividends:
 			divs = app.stockData.getDividends(self.ticker, desc = True)
@@ -112,9 +121,13 @@ class StockDataModel(EditGridModel):
 					if d["date"] in positionData:
 						data = positionData[d["date"]]
 						newRow.append(Transaction.formatFloat(data["shares"]))
+						if haveOptions:
+							newRow.append(Transaction.formatFloat(data["options"]))
 						newRow.append(Transaction.formatDollar(data["value"]))
 					else:
 						newRow.append("")
+						if haveOptions:
+							newRow.append("")
 						newRow.append("")
 					newRow.append("Dividend")
 					newRow.append(Transaction.formatDollar(d["value"]))
@@ -157,28 +170,34 @@ class StockDataModel(EditGridModel):
 				# Output missing data
 				while currPos < len(keys) and keys[currPos] > p["date"]:
 					data = positionData[keys[currPos]]
-					row2 = [keys[currPos], Transaction.formatFloat(data["shares"]), Transaction.formatDollar(data["value"])]
+					row2 = [keys[currPos], Transaction.formatFloat(data["shares"]), Transaction.formatFloat(data["options"]), Transaction.formatDollar(data["value"]), "", "", "", "", ""]
 
 					stockData.append(row2)
 					row += 1
 					currPos += 1
-					
-				# Check if held on date
-				if currPos < len(keys) and keys[currPos] == p["date"]:
-					data = positionData[p["date"]]
-					newRow.append(Transaction.formatFloat(data["shares"]))
-					newRow.append(Transaction.formatDollar(data["value"]))
-					currPos += 1
-				else:
-					newRow.append("")
-					newRow.append("")
-				newRow.append(Transaction.formatDollar(p["open"]))
-				newRow.append(Transaction.formatDollar(p["high"]))
-				newRow.append(Transaction.formatDollar(p["low"]))
-				newRow.append(Transaction.formatDollar(p["close"]))
-				newRow.append(Transaction.formatFloat(p["volume"], commas = True))
-				stockData.append(newRow)
-				self.priceMap[row] = p
+				
+				# Only output stock data after the first transaction
+				if currPos < len(keys):
+					# Check if held on date
+					if keys[currPos] == p["date"]:
+						data = positionData[p["date"]]
+						newRow.append(Transaction.formatFloat(data["shares"]))
+						if haveOptions:
+							newRow.append(Transaction.formatFloat(data["options"]))
+						newRow.append(Transaction.formatDollar(data["value"]))
+						currPos += 1
+					else:
+						newRow.append("")
+						if haveOptions:
+							newRow.append("")
+						newRow.append("")
+					newRow.append(Transaction.formatDollar(p["open"]))
+					newRow.append(Transaction.formatDollar(p["high"]))
+					newRow.append(Transaction.formatDollar(p["low"]))
+					newRow.append(Transaction.formatDollar(p["close"]))
+					newRow.append(Transaction.formatFloat(p["volume"], commas = True))
+					stockData.append(newRow)
+					self.priceMap[row] = p
 
 				row += 1
 				currPrice += 1
@@ -186,7 +205,7 @@ class StockDataModel(EditGridModel):
 			# Output remaining data
 			while currPos < len(keys):
 				data = positionData[keys[currPos]]
-				row2 = [keys[currPos], Transaction.formatFloat(data["shares"]), Transaction.formatDollar(data["value"])]
+				row2 = [keys[currPos], Transaction.formatFloat(data["shares"]), Transaction.formatDollar(data["value"]), "", "", "", "", ""]
 
 				stockData.append(row2)
 				row += 1
@@ -220,6 +239,8 @@ class StockDataWidget(QWidget):
 		hbox.addWidget(QLabel("Ticker:"))
 
 		ticker = app.portfolio.getLastTicker()
+		if not ticker or ticker == "False":
+			ticker = "__CASH__"
 		# Convert __CASH__ to Cash, keep index the same
 		if "__CASH__" in self.tickers:
 			self.tickers.pop(self.tickers.index("__CASH__"))
@@ -448,8 +469,12 @@ class NewStockData(QDialog):
 			self.ticker = QComboBox()
 			self.ticker.setEditable(True)
 			self.ticker.addItems(self.tickers)
-			if ticker in self.tickers:
-				self.ticker.setCurrentIndex(self.tickers.index(ticker))
+			self.ticker.setMaximumWidth(150)
+			if ticker:
+				if ticker in self.tickers:
+					self.ticker.setCurrentIndex(self.tickers.index(ticker))
+				else:
+					self.ticker.lineEdit().setText(ticker)
 		grid.addWidget(self.ticker, row, 1)
 		row += 1
 

@@ -31,6 +31,14 @@ from editGrid import *
 from statusUpdate import *
 import appGlobal
 import tutorial
+import autoUpdater
+from webBrowser import *
+
+try:
+	import keyring
+	haveKeyring = True
+except:
+	haveKeyring = False
 
 class Plugin(PluginBase):
 	def __init__(self):
@@ -52,14 +60,34 @@ class Plugin(PluginBase):
 	def doImport(parent = None):
 		portfolio = appGlobal.getApp().portfolio
 		
-	
 		d = Import(parent)
 		d.exec_()
 		if d.didImport:
 			portfolio.readFromDb()
 			if appGlobal.getApp().tool.name() == "Transactions":
 				appGlobal.getApp().toolWidget.model.setTransactions()
-					
+				appGlobal.getApp().toolWidget.table.resizeColumnsToContents()
+
+class WebImport(QDialog):
+	def __init__(self, parent):
+		QDialog.__init__(self, parent)
+		
+		self.setMinimumSize(300, 200)
+		self.resize(800, 600)
+		
+		vert = QVBoxLayout(self)
+		vert.setMargin(0)
+		
+		vert.addWidget(QLabel("Download transaction history from your bank or brokerage website"))
+
+		self.webView = WebBrowser(self, downloadImport = True)
+		self.webView.setSizePolicy(QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding))
+		vert.addWidget(self.webView)
+		
+		self.setStyleSheet("QLabel { padding: 5px }")
+		
+		self.exec_()
+
 class AccountSelector(QDialog):
 	def __init__(self, parent, choices):
 		QDialog.__init__(self, parent)
@@ -132,11 +160,16 @@ class Import(QDialog):
 
 		portfolio = self.app.portfolio
 		if not portfolio.brokerage:
-			layout.addWidget(QLabel("Set Brokerage and Username in Settings before downloading"))
+			layout.addWidget(QLabel("Set Brokerage and Username\nin Settings tool before downloading"))
+			layout.addSpacing(10)
+			radioStr = "Download from brokerage"
 		elif not portfolio.username:
 			layout.addWidget(QLabel("Set Username in Settings before downloading"))
+			radioStr = "Download from " + portfolio.brokerage
+		else:
+			radioStr = "Download from " + portfolio.brokerage
 
-		self.ofx = QRadioButton("Download from " + portfolio.brokerage, self)
+		self.ofx = QRadioButton(radioStr, self)
 		self.connect(self.ofx, SIGNAL("toggled(bool)"), self.radio)
 		layout.addWidget(self.ofx)
 		
@@ -149,21 +182,41 @@ class Import(QDialog):
 		self.password = QLineEdit()
 		self.password.setEchoMode(QLineEdit.Password)
 		hbox.addWidget(self.password)
-		layout.addSpacing(10)
+		
+		# Check for keying, try to load password
+		if haveKeyring and portfolio.username:
+			self.savePassword = QCheckBox("Save Password")
+			hbox2 = QHBoxLayout()
+			hbox2.addSpacing(20)
+			layout.addLayout(hbox2)
+			hbox2.addWidget(self.savePassword)
+			layout.addSpacing(10)
+
+			password = keyring.get_password("Icarra-ofx-" + portfolio.name, portfolio.username)
+			if password:
+				self.password.setText(password)
+				self.savePassword.setChecked(True)
 
 		self.file = QRadioButton("Import from file", self)
 		self.connect(self.file, SIGNAL("toggled(bool)"), self.radio)
 		layout.addWidget(self.file)
 		layout.addSpacing(10)
 
+		self.web = QRadioButton("Download from web", self)
+		self.connect(self.file, SIGNAL("toggled(bool)"), self.radio)
+		layout.addWidget(self.web)
+		layout.addSpacing(10)
+
 		# Set last import mode
-		if not portfolio.brokerage or not portfolio.username:
+		if portfolio.portPrefs.getLastImport() == "file":
+			self.file.click()
+		elif portfolio.portPrefs.getLastImport() == "web":
+			self.web.click()
+		elif not portfolio.brokerage or not portfolio.username:
 			self.file.click()
 			self.ofx.setDisabled(True)
 			self.password.setDisabled(True)
-			self.passwordLabel.setDisabled(True)
-		elif portfolio.portPrefs.getLastImport() == "file":
-			self.file.click()
+			self.passwordLabel.setStyleSheet("color: gray")
 		else:
 			self.ofx.click()
 			self.password.setFocus()
@@ -191,6 +244,7 @@ class Import(QDialog):
 	def onOk(self):
 		portfolio = self.app.portfolio
 		brokerage = self.app.plugins.getBrokerage(portfolio.brokerage)
+		status = False
 		try:
 			if self.ofx.isChecked():
 				status = StatusUpdate(self, cancelable = True, numTextLines = 3)
@@ -247,7 +301,13 @@ class Import(QDialog):
 				else:
 					portfolio.updateFromFile(ofx, self.app, status)
 					self.didImport = True
-			else:
+					
+					if haveKeyring:
+						if self.savePassword.isChecked():
+							keyring.set_password("Icarra-ofx-" + portfolio.name, username, password)
+						else:
+							keyring.set_password("Icarra-ofx-" + portfolio.name, username, "")
+			elif self.file.isChecked():
 				# Import from file
 				self.app.portfolio.portPrefs.setLastImport("file")
 				fd = QFileDialog(caption = "Choose file to import...")
@@ -263,8 +323,16 @@ class Import(QDialog):
 
 						portfolio.updateFromFile(data, self.app, status)
 					self.didImport = True
+			else:
+				# Import from web
+				self.accept()
+				self.app.portfolio.portPrefs.setLastImport("web")
+				w = WebImport(appGlobal.getApp().main)
+				self.didImport = True
 		except Exception, e:
 			import traceback
+			if status is False:
+				status = StatusUpdate(self)
 			status.addError('Could not get transactions: %s' % traceback.format_exc())
 			status.setFinished()
 		
@@ -273,6 +341,7 @@ class Import(QDialog):
 class NewTransaction(QDialog):
 	def __init__(self, parent, transaction = False):
 		QDialog.__init__(self, parent)
+		portfolio = appGlobal.getApp().portfolio
 		
 		if transaction:
 			self.setWindowTitle('Edit Transaction')
@@ -280,7 +349,7 @@ class NewTransaction(QDialog):
 			self.setWindowTitle('New Transaction')
 		self.transaction = transaction
 
-		self.dollarRe = QRegExp("\$?[0-9]*\.?[0-9]*")
+		self.dollarRe = QRegExp("(\$|-|\$-|-\$)?[0-9]*\.?[0-9]*")
 		self.splitRe = QRegExp("[0-9]+-[0-9]+")
 
 		vbox = QVBoxLayout(self)
@@ -289,20 +358,43 @@ class NewTransaction(QDialog):
 		grid = QGridLayout()
 		vbox.addLayout(grid)
 		
-		self.typeLabel = QLabel("Type:")
+		self.typeLabel = QLabel("<b>Type:</b>")
 		transactionTypes = []
-		for t in Transaction.forEdit():
+		if portfolio.isBrokerage():
+			forEdit = Transaction.forEdit()
+		else:
+			forEdit = Transaction.forEditBank()
+		for t in forEdit:
 			transactionTypes.append(Transaction.getTypeString(t))
 		self.type = QComboBox()
 		self.type.addItems(transactionTypes)
 		if transaction:
-			self.type.setCurrentIndex(transaction.type)
+			self.type.setCurrentIndex(forEdit.index(transaction.type))
 		grid.addWidget(self.typeLabel, 0, 0)
 		grid.addWidget(self.type, 0, 1)
 		
 		self.connect(self.type, SIGNAL("currentIndexChanged(int)"), self.newType)
 
-		self.dateLabel = QLabel("Date:")
+		optionHBox = QHBoxLayout(margin = 0)
+		self.isPut = QRadioButton("Put")
+		optionHBox.addWidget(self.isPut)
+		self.isCall = QRadioButton("Call")
+		optionHBox.addWidget(self.isCall)
+		optionHBox.addStretch(1000)
+		grid.addLayout(optionHBox, 1, 1)
+		
+		# Set options if necessary
+		if transaction:
+			if transaction.type in [Transaction.buyToOpen, Transaction.sellToClose, Transaction.sellToOpen, Transaction.buyToClose, Transaction.exercise, Transaction.assign]:
+				if transaction.subType == Transaction.optionPut:
+					self.isPut.setChecked(True)
+				elif transaction.subType == Transaction.optionCall:
+					self.isCall.setChecked(True)
+		
+		self.connect(self.isPut, SIGNAL("toggled(bool)"), self.changeStockPutCall)
+		self.connect(self.isCall, SIGNAL("toggled(bool)"), self.changeStockPutCall)
+
+		self.dateLabel = QLabel("<b>Date:</b>")
 		self.date = QDateEdit()
 		if transaction:
 			dict = dateDict(transaction.date)
@@ -310,64 +402,88 @@ class NewTransaction(QDialog):
 		else:
 			self.date.setDate(QDate.currentDate())
 		self.date.setCalendarPopup(True)
-		grid.addWidget(self.dateLabel, 1, 0)
-		grid.addWidget(self.date, 1, 1)
-
-		self.tickerLabel = QLabel("Position:")
-		self.ticker = QComboBox()
-		tickers = appGlobal.getApp().portfolio.getTickers()
+		grid.addWidget(self.dateLabel, 2, 0)
+		grid.addWidget(self.date, 2, 1)
+		
+		tickers = portfolio.getTickers(includeAllocation = True)
 		if "__CASH__" in tickers:
 			tickers.pop(tickers.index("__CASH__"))
-			tickers.insert(0, "Cash")
-		self.ticker.addItems(tickers)
-		self.ticker.setEditable(True)
+			tickers.insert(0, "Cash Balance")
+		completer = QCompleter(tickers)
+		# Does not work with Qt.CaseInsensitive
+		# completer.setModelSorting(QCompleter.CaseInsensitivelySortedModel)
+		completer.setCaseSensitivity(Qt.CaseInsensitive)
+
+		self.tickerLabel = QLabel("<b>Position:</b>")
+		self.ticker = QLineEdit()
+		self.ticker.setCompleter(completer)
 		if transaction:
-			self.ticker.setEditText(transaction.formatTicker1())
-		grid.addWidget(self.tickerLabel, 2, 0)
-		grid.addWidget(self.ticker, 2, 1)
+			self.ticker.setText(transaction.formatTicker1())
+		grid.addWidget(self.tickerLabel, 3, 0)
+		grid.addWidget(self.ticker, 3, 1)
 
-		self.ticker2Label = QLabel("New Position:")
-		self.ticker2 = QComboBox()
-		self.ticker2.addItems(tickers)
-		self.ticker2.setEditable(True)
+		self.strikeLabel = QLabel("<b>Strike:</b>")
+		self.strike = QLineEdit()
+		self.strike.setValidator(QRegExpValidator(self.dollarRe, self.strike))
+		if transaction:
+			self.strike.setText(transaction.formatStrike())
+		grid.addWidget(self.strikeLabel, 4, 0)
+		grid.addWidget(self.strike, 4, 1)
+
+		self.expireLabel = QLabel("<b>Expire:</b>")
+		self.expire = QDateEdit()
+		if transaction and transaction.optionExpire:
+			dict = dateDict(transaction.optionExpire)
+			self.expire.setDate(QDate(dict["y"], dict["m"], dict["d"]))
+		else:
+			self.expire.setDate(QDate.currentDate())
+		self.expire.setCalendarPopup(True)
+		grid.addWidget(self.expireLabel, 5, 0)
+		grid.addWidget(self.expire, 5, 1)
+
+		self.ticker2Label = QLabel("<b>New Position:</b>")
+		self.ticker2 = QLineEdit()
+		self.ticker2.setCompleter(completer)
 		if transaction and transaction.ticker2:
-			self.ticker2.setEditText(transaction.formatTicker2())
-		grid.addWidget(self.ticker2Label, 3, 0)
-		grid.addWidget(self.ticker2, 3, 1)
+			self.ticker2.setText(transaction.formatTicker2())
+		grid.addWidget(self.ticker2Label, 6, 0)
+		grid.addWidget(self.ticker2, 6, 1)
 
-		self.sharesLabel = QLabel("Shares:")
+		self.sharesLabel = QLabel("<b>Shares:</b>")
 		self.shares = QLineEdit()
 		self.shares.setValidator(QDoubleValidator(0, 1e9, 12, self.shares))
 		if transaction:
 			self.shares.setText(transaction.formatShares())
-		grid.addWidget(self.sharesLabel, 4, 0)
-		grid.addWidget(self.shares, 4, 1)
+		grid.addWidget(self.sharesLabel, 7, 0)
+		grid.addWidget(self.shares, 7, 1)
 
 		self.connect(self.shares, SIGNAL("textChanged(QString)"), self.checkChangeTotal)
 
-		self.pricePerShareLabel = QLabel("$/Share:")
+		self.pricePerShareLabel = QLabel("<b>$/Share:</b>")
 		self.pricePerShare = QLineEdit()
 		self.pricePerShare.setValidator(QRegExpValidator(self.dollarRe, self.pricePerShare))
 		if transaction:
 			self.pricePerShare.setText(transaction.formatPricePerShare())
-		grid.addWidget(self.pricePerShareLabel, 5, 0)
-		grid.addWidget(self.pricePerShare, 5, 1)
+		grid.addWidget(self.pricePerShareLabel, 8, 0)
+		grid.addWidget(self.pricePerShare, 8, 1)
 
 		self.connect(self.pricePerShare, SIGNAL("textChanged(QString)"), self.checkChangeTotal)
 
-		self.feeLabel = QLabel("Fee:")
+		self.feeLabel = QLabel("<b>Fee:</b>")
 		self.fee = QLineEdit()
 		self.fee.setValidator(QRegExpValidator(self.dollarRe, self.fee))
 		if transaction:
 			self.fee.setText(transaction.formatFee())
-		grid.addWidget(self.feeLabel, 6, 0)
-		grid.addWidget(self.fee, 6, 1)
+		grid.addWidget(self.feeLabel, 9, 0)
+		grid.addWidget(self.fee, 9, 1)
 
-		self.totalLabel = QLabel("Total:")
+		self.connect(self.fee, SIGNAL("textChanged(QString)"), self.checkChangeTotal)
+
+		self.totalLabel = QLabel("<b>Total:</b>")
 		self.total = QLineEdit()
 		self.total.setValidator(QRegExpValidator(self.dollarRe, self.total))
-		grid.addWidget(self.totalLabel, 7, 0)
-		grid.addWidget(self.total, 7, 1)
+		grid.addWidget(self.totalLabel, 10, 0)
+		grid.addWidget(self.total, 10, 1)
 
 		# Buttons
 		hbox = QHBoxLayout()
@@ -390,6 +506,9 @@ class NewTransaction(QDialog):
 				self.total.setText(transaction.formatTotal())
 			else:
 				self.checkChangeTotal()
+
+	def changeStockPutCall(self, state):
+		self.enableDisable()
 
 	def ok(self):
 		date = self.date.date()
@@ -420,15 +539,25 @@ class NewTransaction(QDialog):
 				total = float(total)
 		else:
 			# Spinoffs, ticker changes and expenses do not have total
-			if not type in [Transaction.spinoff, Transaction.tickerChange, Transaction.expense]:
+			validTotal = True
+			if type in [Transaction.spinoff, Transaction.tickerChange, Transaction.expense, Transaction.sellToOpen, Transaction.buyToClose, Transaction.exercise, Transaction.assign, Transaction.stockDividend, Transaction.transferIn, Transaction.transferOut]:
+				pass
+			elif not type in [Transaction.spinoff, Transaction.tickerChange, Transaction.expense, Transaction.sellToOpen, Transaction.buyToClose, Transaction.exercise, Transaction.assign, Transaction.stockDividend]:
+				validTotal = False
+			
+			if not validTotal:
 				QMessageBox(QMessageBox.Critical, "Invalid total", "Please enter a proper value for Total").exec_()
 				return
-		if total and (type == Transaction.sell or type == Transaction.withdrawal or type == Transaction.expense):
+		if total and (type == Transaction.sell or type == Transaction.buyToClose or type == Transaction.withdrawal or type == Transaction.expense):
 			total = -abs(total)
 		
-		ticker = str(self.ticker.currentText())
-		if ticker == "Cash":
+		# Decide when to use __CASH__ position
+		if type in [Transaction.deposit, Transaction.withdrawal]:
 			ticker = "__CASH__"
+		else:
+			ticker = str(self.ticker.text())		
+			if ticker == "Cash Balance":
+				ticker = "__CASH__"
 		
 		fee = str(self.fee.text()).strip("$").replace(",", "")
 		if fee:
@@ -441,6 +570,27 @@ class NewTransaction(QDialog):
 		pricePerShare = str(self.pricePerShare.text()).strip("$").replace(",", "")
 		if pricePerShare:
 			pricePerShare = float(pricePerShare)
+		
+		# No subType or options by default
+		subType = False
+		optionExpire = False
+		optionStrike = False
+		
+		# Check for options
+		if type in [Transaction.buyToOpen, Transaction.sellToClose, Transaction.sellToOpen, Transaction.buyToClose, Transaction.exercise, Transaction.assign]:
+			optionStrike = str(self.strike.text()).strip("$").replace(",", "")
+			if optionStrike:
+				optionStrike = float(optionStrike)
+			
+			if self.isPut.isChecked():
+				subType = Transaction.optionPut
+			elif self.isCall.isChecked():
+				subType = Transaction.optionCall
+			else:
+				raise Exception("unknown option option")
+			
+			optionExpire = self.expire.date()
+			optionExpire = "%04d-%02d-%02d 00:00:00" % (optionExpire.year(), optionExpire.month(), optionExpire.day())
 
 		# We pass.  Now update transaction or create a new one.
 		if self.transaction:
@@ -455,10 +605,13 @@ class NewTransaction(QDialog):
 			total,
 			shares,
 			pricePerShare,
-			fee)
+			fee,
+			subType = subType,
+			optionExpire = optionExpire,
+			optionStrike = optionStrike)
 	
-		if self.ticker2.currentText():
-			t.setTicker2(str(self.ticker2.currentText()))
+		if self.ticker2.text():
+			t.setTicker2(str(self.ticker2.text()))
 				
 		error = t.checkError()
 		if not error:
@@ -481,57 +634,75 @@ class NewTransaction(QDialog):
 		type = Transaction.forEdit()[self.type.currentIndex()]
 		if type >= Transaction.numTransactionTypes:
 			return
-			
-		def labelTwiddle(label, enabled):
-			label.setDisabled(not enabled)
-			font = label.font()
-			font.setBold(enabled)
-			label.setFont(font)
-		
-		labelTwiddle(self.typeLabel, True)
-		labelTwiddle(self.dateLabel, True)
-		labelTwiddle(self.feeLabel, True)
+					
+		self.setUpdatesEnabled(False)
 
 		fields = Transaction.fieldsForTransaction(type)
 		if "ticker" in fields:
-			self.ticker.setDisabled(False)
-			labelTwiddle(self.tickerLabel, True)
+			self.ticker.setVisible(True)
+			self.tickerLabel.setVisible(True)
 		else:
-			self.ticker.setDisabled(True)
-			self.ticker.setEditText("Cash")
-			labelTwiddle(self.tickerLabel, False)
+			self.ticker.setVisible(False)
+			self.tickerLabel.setVisible(False)
+			self.ticker.setText("")
 
 		if "ticker2" in fields:
-			self.ticker2.setDisabled(False)
-			labelTwiddle(self.ticker2Label, True)
+			self.ticker2.setVisible(True)
+			self.ticker2Label.setVisible(True)
 		else:
-			self.ticker2.setDisabled(True)
-			self.ticker2.setEditText("")
-			labelTwiddle(self.ticker2Label, False)
+			self.ticker2.setText("")
+			self.ticker2.setVisible(False)
+			self.ticker2Label.setVisible(False)
 
 		if "shares" in fields:
-			self.shares.setDisabled(False)
-			labelTwiddle(self.sharesLabel, True)
+			self.shares.setVisible(True)
+			self.sharesLabel.setVisible(True)
 		else:
-			self.shares.setDisabled(True)
+			self.shares.setVisible(False)
+			self.sharesLabel.setVisible(False)
 			self.shares.setText("")
-			labelTwiddle(self.sharesLabel, False)
 
 		if "pricePerShare" in fields:
-			self.pricePerShare.setDisabled(False)
-			labelTwiddle(self.pricePerShareLabel, True)
+			self.pricePerShare.setVisible(True)
+			self.pricePerShareLabel.setVisible(True)
 		else:
-			self.pricePerShare.setDisabled(True)
+			self.pricePerShare.setVisible(False)
+			self.pricePerShareLabel.setVisible(False)
 			self.pricePerShare.setText("")
-			labelTwiddle(self.pricePerShareLabel, False)
 
 		if "total" in fields:
+			self.total.setVisible(True)
+			self.totalLabel.setVisible(True)
 			self.total.setDisabled(False)
-			labelTwiddle(self.totalLabel, True)
+			self.totalLabel.setDisabled(False)
+		elif "-total" in fields:
+			self.total.setVisible(False)
+			self.totalLabel.setVisible(False)
 		else:
+			self.total.setVisible(True)
+			self.totalLabel.setVisible(True)
 			self.total.setDisabled(True)
+			self.totalLabel.setDisabled(True)
 			self.total.setText("")
-			labelTwiddle(self.totalLabel, False)
+			self.checkChangeTotal()
+		
+		# Enable/disable put, call for options
+		if type in [Transaction.buyToOpen, Transaction.sellToClose, Transaction.buyToClose, Transaction.sellToOpen, Transaction.exercise, Transaction.assign]:
+			self.isPut.setVisible(True)
+			self.isCall.setVisible(True)
+			self.strike.setVisible(True)
+			self.strikeLabel.setVisible(True)
+			self.expire.setVisible(True)
+			self.expireLabel.setVisible(True)
+			if not self.isPut.isChecked() and not self.isCall.isChecked():
+				self.isPut.setChecked(True)
+		else:
+			self.isPut.setVisible(False)
+			self.isCall.setVisible(False)
+			self.strike.setVisible(False)
+			self.strikeLabel.setVisible(False)
+			self.expire.setVisible(False)
+			self.expireLabel.setVisible(False)
 		
 		# Check that total is a valid string
 		if type == Transaction.split:
@@ -540,17 +711,42 @@ class NewTransaction(QDialog):
 			self.total.setValidator(QRegExpValidator(self.dollarRe, self.total))
 		if self.total.validator().validate(self.total.text(), 0)[0] == QValidator.Invalid:
 			self.total.setText('')
+		
+		# Resize
+		appGlobal.getApp().processEvents()
+		self.resize(self.sizeHint())
+		self.setUpdatesEnabled(True)
+		self.repaint()
 	
 	def checkChangeTotal(self, ignoreStr = "ignore"):
 		shares = self.shares.text()
-		pps = self.pricePerShare.text().replace("$", "")
+		pps = self.pricePerShare.text().replace("$", "").replace(",", "")
+		fee = self.fee.text().replace("$", "").replace(",", "")
 		
-		if shares != "" and pps != "":
-			total = QString()
-			total.setNum(float(shares) * float(pps))
-			self.total.setText('$' + total)
+		# If short, no total
+		type = Transaction.forEdit()[self.type.currentIndex()]
+		if type == Transaction.short:
+			if fee:
+				self.total.setText(str(-float(fee)))
+			else:
+				self.total.setText("")
+		elif type == Transaction.cover:
+			# Covers do not set automatically
+			pass
+		elif shares != "" and pps != "":
+			try:
+				newTotal = float(shares) * float(pps)
+				if fee != "":
+					if type in [Transaction.sellToOpen, Transaction.sell, Transaction.sellToClose]:
+						newTotal -= float(fee)
+					else:
+						newTotal += float(fee)
+				self.total.setText(Transaction.formatDollar(newTotal))
+			except:
+				# Bad float value most likely
+				self.total.setText("")
 		else:
-			self.total.setText('')
+			self.total.setText("")
 
 	def newType(self, index):
 		self.enableDisable()
@@ -564,15 +760,16 @@ class TransactionModel(EditGridModel):
 		if self.ticker == "False" or self.ticker == "__COMBINED__":
 			self.ticker = False
 
-		columns = ["Date", "Position", "Transaction", "Shares", "$/Share", "Fee", "Total"]
-		if appGlobal.getApp().prefs.getShowCashInTransactions():
-			columns.append("Cash")
-		self.setColumns(columns)
-
 		self.setTransactions()
 	
+		columns = ["Date", "Position", "Transaction", "Shares", "$/Share", "Fee", "Total"]
+		if appGlobal.getApp().prefs.getShowCashInTransactions():
+			columns.append("Cash Balance")
+		self.setColumns(columns)
+
 	def setTransactions(self):
 		app = appGlobal.getApp()
+		app.portfolio.readFromDb()
 		trans = app.portfolio.getTransactions(deletedOnly = self.showDeleted)
 		self.transactions = []
 		self.transactionIds = []
@@ -583,12 +780,7 @@ class TransactionModel(EditGridModel):
 			trans.reverse()
 			cash = 0
 			for t in trans:
-				if t.type in [Transaction.deposit, Transaction.sell, Transaction.dividend, Transaction.cover]:
-					cash += abs(t.total)
-				elif t.type in [Transaction.withdrawal, Transaction.buy, Transaction.expense, Transaction.short]:
-					cash -= abs(t.total)
-				elif t.type == Transaction.adjustment and t.ticker == "__CASH__":
-					cash += t.total
+				cash += t.getCashMod()
 				t.computedCashValue = cash
 			trans.reverse()
 
@@ -634,7 +826,7 @@ class TransactionWidget(QWidget):
 		self.tickers = appGlobal.getApp().portfolio.getTickers()
 		if "__CASH__" in self.tickers:
 			self.tickers.pop(self.tickers.index("__CASH__"))
-			self.tickers.insert(0, "Cash")
+			self.tickers.insert(0, "Cash Balance")
 		self.tickers.insert(0, "All Positions")
 		self.tickerBox.addItems(self.tickers)
 		lastTicker = appGlobal.getApp().portfolio.getLastTicker()
@@ -654,13 +846,13 @@ class TransactionWidget(QWidget):
 		portfolio = appGlobal.getApp().portfolio
 
 		self.importTransactionButton = QPushButton("Import")
-		if not portfolio.isBrokerage():
+		if not portfolio.isBrokerage() and not portfolio.isBank():
 			self.importTransactionButton.setDisabled(True)
 		hor2.addWidget(self.importTransactionButton)
 		self.connect(self.importTransactionButton, SIGNAL("clicked()"), self.importTransactions)
 
 		self.newTransactionButton = QPushButton("New")
-		if not portfolio.isBrokerage():
+		if not portfolio.isBrokerage() and not portfolio.isBank():
 			self.newTransactionButton.setDisabled(True)
 		hor2.addWidget(self.newTransactionButton)
 		self.connect(self.newTransactionButton, SIGNAL("clicked()"), self.newTransaction)
@@ -715,15 +907,20 @@ class TransactionWidget(QWidget):
 		row = self.table.selectedRow()
 		if row == -1:
 			return
-		if self.model.sortOrder == Qt.AscendingOrder:
-			row = -row - 1
 		id = self.model.transactionIds[row]
 		
 		# Loop over transactions, edit id, reselect row and finish
 		for t in appGlobal.getApp().portfolio.getTransactions():
 			if t.uniqueId == id:
 				NewTransaction(self, t).exec_()
-				self.table.selectRow(row)
+				
+				# Find the row for our transaction id, it may have changed
+				i = 0
+				for thisId in self.model.transactionIds:
+					if thisId == id:
+						self.table.selectRow(i)
+						break
+					i += 1
 				break
 			
 	def deleteTransaction(self):
@@ -752,8 +949,10 @@ class TransactionWidget(QWidget):
 			else:
 				t.setDeleted()
 			t.save(appGlobal.getApp().portfolio.db)
-			appGlobal.getApp().portfolio.setDirty()
+			appGlobal.getApp().portfolio.portPrefs.setDirty(True)
+			appGlobal.getApp().portfolio.readFromDb()
 			self.model.setTransactions()
+			autoUpdater.wakeUp()
 	
 	def changeShowDeleted(self, newValue):
 		if newValue == Qt.Checked:
@@ -771,7 +970,7 @@ class TransactionWidget(QWidget):
 		ticker = self.tickers[index]
 		if ticker == "All Positions":
 			self.model.ticker = False
-		elif ticker == "Cash":
+		elif ticker == "Cash Balance":
 			self.model.ticker = "__CASH__"
 		else:
 			self.model.ticker = ticker
@@ -780,7 +979,7 @@ class TransactionWidget(QWidget):
 	
 	def selectedRow(self, deselected, selected):
 		# Update tool action to allow editing/deleting transactions
-		if len(self.table.selectionModel().selectedRows()) > 0 and appGlobal.getApp().portfolio.isBrokerage():
+		if len(self.table.selectionModel().selectedRows()) > 0 and (appGlobal.getApp().portfolio.isBrokerage() or appGlobal.getApp().portfolio.isBank()):
 			self.deleteTransactionButton.setDisabled(False)
 			self.editTransactionButton.setDisabled(False)
 		else:

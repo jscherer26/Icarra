@@ -29,6 +29,7 @@ from PyQt4.QtGui import *
 from portfolio import *
 
 import appGlobal
+import autoUpdater
 import datetime
 import os
 
@@ -104,23 +105,23 @@ class SplashScreenFrame(QDialog):
 		self.raise_()
 		app.processEvents()
 		self.activateWindow()
-		app.processEvents()
 
 		if firstTime:
 			status = 0
+			self.lastRet = 0
+			self.sleptOnce = False
 			while status != 95 and self.running:
-				time.sleep(0.1)
+				# Process events for 500ms
+				app.processEvents(QEventLoop.AllEvents, 500)
 				status = self.checkStatus()
+				self.lastRet = max(status, self.lastRet)
+				status = self.lastRet
 				if self.progress.value() != status:
 					self.progress.setValue(status)
 
-				app.processEvents()
 
 	def checkStatus(self):
 		app = appGlobal.getApp()
-		
-		if not "lastRet" in dir(self):
-			self.lastRet = 0
 
 		# Return 10 by default
 		ret = 10
@@ -129,34 +130,18 @@ class SplashScreenFrame(QDialog):
 			self.running = False
 			return ret
 
-		# Check stock data for VFINX, VBMFX, VTSMX, APPL, XOM
-		p = app.stockData.getPrices("VFINX")
-		if len(p) > 0:
-			ret += 12
-		p = app.stockData.getPrices("VBMFX")
-		if len(p) > 0:
-			ret += 12
-		p = app.stockData.getPrices("VTSMX")
-		if len(p) > 0:
-			ret += 12
-		p = app.stockData.getPrices("AAPL")
-		if len(p) > 0:
-			ret += 12
-		p = app.stockData.getPrices("XOM")
-		if len(p) > 0:
-			ret += 12
-
-		# Check for portfolio being built
-		# But do not rebuild immediately
-		if ret == 70 and self.lastRet >= 70:
-			p = Portfolio("S&P 500")
-			p.rebuildPositionHistory(app.stockData)
-			ret = 85
-		if ret == 85 and self.lastRet >= 85:
-			p = Portfolio("Sample Portfolio")
-			p.rebuildPositionHistory(app.stockData)
-			ret = 95
-		self.lastRet = ret
+		# Sleep twice to make sure everything was updated
+		# 94 = slept once
+		# 95 = slept twice
+		if autoUpdater.sleeping():
+			if self.sleptOnce:
+				return 95
+			else:
+				self.sleptOnce = True
+				autoUpdater.wakeUp()
+				return 94
+		
+		ret = 10 + 84 * autoUpdater.percentDone() / 100
 		return ret
 
 

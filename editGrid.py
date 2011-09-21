@@ -57,6 +57,12 @@ class EditGridModel(QAbstractTableModel):
 
 	def setData(self, data, reset = True):
 		self.myData = data
+
+		# Append the index of each element as the last value
+		i = 0
+		for row in self.myData:
+			row.append(i)
+			i += 1
 		
 		if self.sortColumn:
 			self.sort(self.sortColumn, self.sortOrder)
@@ -129,10 +135,11 @@ class EditGridModel(QAbstractTableModel):
 			if column in self.redGreenCols or row in self.redGreenRows:
 				d = self.myData[row]
 				if column < len(d):
-					val = d[column].replace('$', '').replace('%', '').replace(',', '')
+					val = d[column]
 					if val:
 						# Try converting to float and return positive/negative
 						try:
+							val = val.replace('$', '').replace('%', '').replace(',', '')
 							val = float(val)
 							if val >= 0:
 								return QVariant(appGlobal.getApp().positiveColor)
@@ -208,11 +215,25 @@ class EditGrid(QTableView):
 			self.editColumns[column] = [row]
 		else:
 			self.editColumns[column].append(row)
+
+	def getEdit(self, row, column):
+		index = self.model().createIndex(row, column)
+		return self.indexWidget(index)
+
+	def selectRow(self, index):
+		# The last element of each row contains the original row number
+		i = 0;
+		for row in self.model().myData:
+			if row[-1] == index:
+				QTableView.selectRow(self, i)
+			i += 1
 	
 	def selectedRow(self):
 		rows = self.selectionModel().selectedRows()
 		if len(rows) > 0:
-			return rows[0].row()
+			# The last element of each row contains the original row number
+			sortedRow = rows[0].row()
+			return self.model().myData[sortedRow][-1]
 		else:
 			return -1
 

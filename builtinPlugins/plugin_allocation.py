@@ -43,6 +43,9 @@ class Plugin(PluginBase):
 
 	def version(self):
 		return (1, 0, 0)
+	
+	def forBank(self):
+		return False
 
 	def initialize(self):
 		pass
@@ -147,20 +150,21 @@ class AllocationModel(EditGridModel):
 		self.app = appGlobal.getApp()
 		
 		self.ticker = appGlobal.getApp().portfolio.getLastTicker()
-		self.setColumns(["Position", "Target %", "Current %", "Current $", "Difference %", "Difference $"])
+		if appGlobal.getApp().portfolio.isBrokerage():
+			self.setColumns(["Position", "Target %", "Current %", "Current $", "Difference %", "Difference $", "Shares"])
+		else:
+			self.setColumns(["Position", "Target %", "Current %", "Current $", "Difference %", "Difference $"])
 		self.setRedGreenColumn(4)
 		self.setRedGreenColumn(5)
 		self.setAllocation()
 	
 	def setAllocation(self, reset = True):
-		data = []
-
 		allocation = self.app.portfolio.getAllocation()
 		positions = self.app.portfolio.getPositions(current = True)
 
 		total = 0.0
 		for p in positions:
-			if p != "__COMBINED__" and positions[p]["value"] > 0.0:
+			if p != "__COMBINED__" and p != "__BENCHMARK__" and positions[p]["value"] > 0.0:
 				total += positions[p]["value"]
 		self.total = total
 				
@@ -176,10 +180,9 @@ class AllocationModel(EditGridModel):
 		
 		sumPercent = 0.0
 		row = 1
-		self.editors = {}
 		data = []
 		for ticker in allTickers:
-			if ticker == "__COMBINED__":
+			if ticker == "__COMBINED__" or ticker == "__BENCHMARK__":
 				continue
 			
 			# Default everything to n/a
@@ -192,7 +195,10 @@ class AllocationModel(EditGridModel):
 			currentRow = []
 
 			if ticker in positions:
-				current = positions[ticker]["value"] / total * 100.0
+				if total > 0:
+					current = positions[ticker]["value"] / total * 100.0
+				else:
+					current = 0
 				currentDollar = "$" + locale.format("%.2f", positions[ticker]["value"], True)
 				
 				if not ticker in allocation:
@@ -219,9 +225,7 @@ class AllocationModel(EditGridModel):
 			#if name:
 			#	grid.getCtrl(row, 0).SetToolTipString(name)
 			
-			self.editors[ticker] = QLineEdit()
 			if ticker in allocation:
-				self.editors[ticker].setText("%s" % allocation[ticker])
 				currentRow.append("%s" % allocation[ticker])
 			else:
 				currentRow.append("")
@@ -258,6 +262,32 @@ class AllocationModel(EditGridModel):
 				label.setPalette(palette)
 				#grid.addWidget(label, row, 5)
 				currentRow.append("$%s%s" % (sign, dollarStr))
+			
+			# If this is a brokerage and it has valid history
+			if self.app.portfolio.isBrokerage() and "__CASH__" in positions:
+				# Get last stock data
+				date = self.app.stockData.getLastDate(ticker)
+				if date:
+					value = self.app.stockData.getPrice(ticker, date)
+					if value and differenceDollar != "n/a":
+						cash = positions["__CASH__"]["value"]
+						if cash > 0 and differenceDollar < -cash:
+							differenceDollar = -cash
+						shares = differenceDollar / value["close"]
+						if shares > 0:
+							currentRow.append("Sell %.2f" % shares)
+						elif shares < 0:
+							# Buy up to cash amount of shares if we can't totally rebalance
+							# Or buy rebalancing amount plus remaining balance
+							if differenceDollar > -cash:
+								currentRow.append("Buy %.2f to %.2f" % (abs(shares), cash / value["close"]))
+							else:
+								currentRow.append("Buy %.2f" % abs(shares))
+						else:
+							currentRow.append("")
+						currentRow.append(shares)
+				else:
+					currentRow.append("")
 
 			#if sign == "+":
 			#	color = self.app.positiveTextColor
@@ -273,6 +303,9 @@ class AllocationModel(EditGridModel):
 		currentRow.append("%.2f%%" % sumPercent)
 		currentRow.append("100.0%")
 		currentRow.append("$" + locale.format("%.2f", total, True))
+		currentRow.append("")
+		currentRow.append("")
+		currentRow.append("")
 		data.append(currentRow)
 
 		self.setData(data, reset)
@@ -318,9 +351,12 @@ class AllocationWidget(QWidget):
 		
 		horiz.addStretch(1000)
 		
-		self.table = EditGrid(self.model)		
+		self.table = EditGrid(self.model)
+		# Set edit columns for allocation for all but last row
 		for i in range(self.model.rowCount() - 1):
 			self.table.setEdit(i, 1)
+			editor = self.table.getEdit(i, 1)
+			editor.setValidator(QDoubleValidator(0, 1e9, 12, editor))
 
 		self.table.resizeRowsToContents()
 		vbox.addWidget(self.table)
@@ -344,7 +380,6 @@ class AllocationWidget(QWidget):
 			self.model.setAllocation()
 			for i in range(self.model.rowCount() - 1):
 				self.table.setEdit(i, 1)
-				self.table.editors[-1].deselect()
 			self.table.resizeRowsToContents()
 
 	def selectedRow(self, deselected, selected):

@@ -26,9 +26,17 @@
 import threading
 import time
 import datetime
+import traceback
 
 import appGlobal
 import portfolio
+
+try:
+	import keyring
+	haveKeyring = True
+	from ofxToolkit import *
+except:
+	haveKeyring = False
 
 global updater
 updater = False
@@ -39,6 +47,7 @@ class AutoUpdater(threading.Thread):
 		self.prefs = prefs
 		self.running = True
 		self.sleeping = False
+		self.rebuilding = False # rebuilding portfolios
 		self.tickerCount = 0
 		self.tickersToImport = 1
 		
@@ -55,6 +64,7 @@ class AutoUpdater(threading.Thread):
 		while self.running:
 			self.freshStart = False
 			now = datetime.datetime.now()
+
 			#print "Check for new stock data at %s" % now.strftime("%Y-%m-%d %H:%M:%S")
 
 			# Determine the cutoff date for downloading new stock data
@@ -80,6 +90,41 @@ class AutoUpdater(threading.Thread):
 				p.readFromDb()
 				ports[name] = p
 				
+			# Auto update
+			if app.prefs.getBackgroundImport() and haveKeyring:
+				# Import once every 20 hours
+				diff = now - app.prefs.getLastBackgroundImport()
+				#print "time since last auto import", diff
+				if diff > datetime.timedelta(hours = 20):
+					print "Background import transactions at %s" % now.strftime("%Y-%m-%d %H:%M:%S")
+					for name, p in ports.items():
+						if not self.running:
+							break
+
+						if p.isBrokerage() and p.brokerage != "" and p.username != "" and p.account != "":
+							# check for password and brokerage
+							brokerage = app.plugins.getBrokerage(p.brokerage)
+							if not brokerage:
+								continue
+							password = keyring.get_password("Icarra-ofx-" + name, p.username)
+							if not password:
+								continue
+							print "import from", name
+							# Get ofx data, update if not empty
+							# It may be an error string, in which case it's ignored
+							ofx = getOfx(p.username, password, brokerage, p.account)
+							if ofx != "":
+								(numNew, numOld, newTickers) = p.updateFromFile(ofx, app)
+								if numNew > 0 or newTickers:
+									p.portPrefs.setDirty(True)
+							print "imported"
+
+					# Update time only if not aborted
+					if self.running:
+						app.prefs.setLastBackgroundImport()
+
+			# Build list of tickers
+			for name, p in ports.items():
 				pTickers = p.getTickers(includeAllocation = True)
 				for ticker in pTickers:
 					if ticker in ["__CASH__", "__COBMINED__"]:
@@ -94,12 +139,12 @@ class AutoUpdater(threading.Thread):
 					# Add to list of tickers
 					if not ticker in tickers:
 						tickers.append(ticker)
-			
+
 			# Remove tickers that do not need to be updated
 			for ticker in tickers[:]:
 				# Check if we do not have data after the cutoffTime
 				last = self.stockData.getLastDate(ticker)
-				if last and last >= cutoffTime:
+				if 0 and last and last >= cutoffTime:
 					tickers.remove(ticker)
 					continue
 				
@@ -129,11 +174,10 @@ class AutoUpdater(threading.Thread):
 					new = self.stockData.updateStocks(downloadPart)
 					appGlobal.setConnected(True)
 				except Exception, e:
-					print e
+					print traceback.format_exc()
 					appGlobal.setFailConnected(True)
 					return
 				for ticker in downloadPart:
-					self.stockData.setLastDownload(ticker)
 					self.tickerCount += 1
 					if new:
 						for p in tickerPorts[ticker]:
@@ -146,19 +190,55 @@ class AutoUpdater(threading.Thread):
 						new = self.stockData.updateStocks([ticker])
 						appGlobal.setConnected(True)
 					except Exception, e:
-						print e
+						print traceback.format_exc()
 						appGlobal.setFailConnected(True)
 						return
-					self.stockData.setLastDownload(ticker)
 					if new:
 						for p in tickerPorts[ticker]:
-							portsToUpdate[p.name] = True
+							# Add 3 for every port
+							if not p.name in portsToUpdate:
+								if app.prefs.getBackgroundRebuild():
+									self.tickersToImport += 3
+								portsToUpdate[p.name] = True
 
 				self.tickerCount += 1
 			
-			# Mark portfolios with new ticker data as dirty
+			# Mark every portfolio as dirty
 			for name in portsToUpdate:
 				ports[name].portPrefs.setDirty(True)
+			
+			# Next rebuild if the user has it configured
+			if app.prefs.getBackgroundRebuild():
+				self.rebuilding = True
+				# Rebuild benchmarks, portfolios, combined portfolios
+				for name, p in ports.items():
+					if not self.running:
+						break
+					if p.portPrefs.getDirty() and p.isBenchmark():
+						try:
+							ports[name].rebuildPositionHistory(self.stockData)
+						except Exception, e:
+							print traceback.format_exc()
+						self.tickerCount += 3
+				for name, p in ports.items():
+					if not self.running:
+						break
+					if p.portPrefs.getDirty() and p.isBrokerage():
+						try:
+							ports[name].rebuildPositionHistory(self.stockData)
+						except Exception, e:
+							print traceback.format_exc()
+						self.tickerCount += 3
+				for name, p in ports.items():
+					if not self.running:
+						break
+					if p.portPrefs.getDirty() and p.isCombined():
+						try:
+							ports[name].rebuildPositionHistory(self.stockData)
+						except Exception, e:
+							print traceback.format_exc()
+						self.tickerCount += 3
+				self.rebuilding = False
 			
 			# Close all opened portfolios
 			for name, p in ports.items():
@@ -172,6 +252,7 @@ class AutoUpdater(threading.Thread):
 			if self.running and not self.freshStart:
 				self.sleepCond.acquire()
 				self.sleeping = True
+				self.tickerCount = self.tickersToImport # Percent done = 100%
 				self.sleepCond.wait(60 * 60)
 				self.sleeping = False
 				self.tickerCount = 0
@@ -228,6 +309,13 @@ def sleeping():
 	global updater
 	if updater:
 		return updater.sleeping
+	else:
+		return False
+
+def rebuilding():
+	global updater
+	if updater:
+		return updater.rebuilding
 	else:
 		return False
 

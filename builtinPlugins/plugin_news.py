@@ -25,16 +25,14 @@
 
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
-from PyQt4.QtWebKit import *
 
-#import webbrowser
-import urllib
 import re
 import feedparser
 
 from editGrid import *
 from statusUpdate import *
 from plugin import *
+from webBrowser import *
 
 class Plugin(PluginBase):
 	def name(self):
@@ -45,6 +43,9 @@ class Plugin(PluginBase):
 
 	def version(self):
 		return (1, 0, 0)
+
+	def forBank(self):
+		return False
 
 	def initialize(self):
 		pass
@@ -57,40 +58,6 @@ class Plugin(PluginBase):
 
 	def finalize(self):
 		pass
-
-def downloadHtml(url):
-	f = urllib.urlopen(url)
-	s = f.read()
-	f.close()
-
-	# Get rid of script
-	while True:
-		m = re.search("<script[^>]*>", s)
-		if not m:
-			break
-	
-		m2 = re.search("</script[^>]*>", s)
-		if not m2:
-			break
-		
-		s = s[:m.span()[0]] + s[m2.span()[1]:]
-
-	# Get rid of noscript
-	while True:
-		m = re.search("<noscript[^>]*>", s)
-		if not m:
-			break
-	
-		m2 = re.search("</noscript[^>]*>", s)
-		if not m2:
-			break
-		
-		s = s[:m.span()[0]] + s[m2.span()[1]:]
-
-	# Get rid of everything after .gif? (motley fool)
-	#s = re.sub("\.gif\?[^\"]*", ".gif", s)
-
-	return s
 
 class NewsModel(EditGridModel):
 	def __init__(self, parent = None, *args): 
@@ -217,56 +184,26 @@ class NewsWidget(QWidget):
 		self.table.setSelectionMode(QAbstractItemView.SingleSelection)
 		self.connect(self.table.selectionModel(), SIGNAL("selectionChanged(QItemSelection, QItemSelection)"), self.selectedRow)
 		
-		self.webView = QWebView()
+		self.webView = WebBrowser(self, downloadImport = False)
 		self.webView.hide()
-		self.webView.setSizePolicy(QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding))
-		self.connect(self.webView, SIGNAL("linkClicked (const QUrl&)"), self.adjustLocationUrl)
-		self.connect(self.webView, SIGNAL("urlChanged (const QUrl&)"), self.adjustLocationUrl)
-
-		self.locationEdit = QLineEdit()
-		self.locationEdit.setSizePolicy(QSizePolicy(QSizePolicy.Expanding, self.locationEdit.sizePolicy().verticalPolicy()))
-		self.connect(self.locationEdit, SIGNAL("returnPressed()"), self.changeLocation)
-
-		self.webToolBar = QToolBar()
-		self.webToolBar.addAction(self.webView.pageAction(QWebPage.Back))
-		self.webToolBar.addAction(self.webView.pageAction(QWebPage.Forward))
-		self.webToolBar.addAction(self.webView.pageAction(QWebPage.Reload))
-		self.webToolBar.addAction(self.webView.pageAction(QWebPage.Stop))
-		self.webToolBar.hide()
-		self.webToolBar.addWidget(self.locationEdit)
-		
-		layout.addWidget(self.webToolBar)
 		layout.addWidget(self.webView)
 	
 		self.model.setNews()
 		self.table.resizeRowsToContents()
-
-	def adjustLocationUrl(self, url):
-		self.locationEdit.setText(url.toString())
-		self.locationEdit.setCursorPosition(0)
-
- 	def changeLocation(self):
-		url = QUrl(self.locationEdit.text())
-		self.webView.load(url)
-		self.webView.setFocus()
  
 	def onView(self):
 		row = self.table.selectionModel().selectedRows()[0].row()
 		
 		if self.webView.isHidden():
 			url = self.model.map[row]["url"]
-			self.locationEdit.setText(url)
-			self.locationEdit.setCursorPosition(0)
-			self.webView.load(QUrl(url))
+			self.webView.loadUrl(url)
 			self.table.hide()
-			self.webToolBar.show()
 			self.webView.show()
 			self.view.setText("Hide")
 		else:
 			self.webView.setContent("")
 			self.view.setText("View")
 			self.table.show()
-			self.webToolBar.hide()
 			self.webView.hide()
 
  	def selectedRow(self, deselected, selected):

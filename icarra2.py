@@ -29,32 +29,45 @@ import uuid
 import time
 import datetime
 import mutex
+import traceback
+import locale
+
+locale.setlocale(locale.LC_ALL, "")
 
 # Check that all required components are available
 try:
 	from PyQt4.QtCore import *
 	from PyQt4.QtGui import *
+	from PyQt4.QtWebKit import *
+	from PyQt4.QtNetwork import *
 except:
 	print "Icarra requires PyQt version 4.4 or higher"
-	sys.exit(0)
+	sys.exit(-1)
+
+try:
+	import keyring
+except:
+	# Ignore missing keyring, not critical
+	pass
 
 try:
 	import sgmlop 
 except:
 	print "Icarra requires the sgmlop library"
-	sys.exit(0)
+	sys.exit(-1)
 
 try:
+	import json
 	import jsonrpc
 except:
 	print "Icarra requires the jsonrpc library"
-	sys.exit(0)
+	sys.exit(-1)
 
 try:
 	import feedparser
 except:
 	print "Icarra requires the feedparser library"
-	sys.exit(0)
+	sys.exit(-1)
 
 # For chart director
 if sys.platform.startswith("darwin"):
@@ -86,16 +99,21 @@ import autoUpdater
 import plugin
 import feedparser
 import chartWidget
+import webBrowser
 
 class ToolSelectorDelegate(QItemDelegate):
-        def __init__(self, parent):
-                QItemDelegate.__init__(self, parent)
-
-        def sizeHint(self, option, index):
+	def __init__(self, parent):
+		QItemDelegate.__init__(self, parent)
+		self.myHint = False
+	
+	def sizeHint(self, option, index):
+		if self.myHint:
+			return self.myHint
+		
 		# Increase height by 10
-                hint = QItemDelegate.sizeHint(self, option, index)
-		hint.setHeight(hint.height() + 10)
-                return hint
+		self.myHint = QItemDelegate.sizeHint(self, option, index)
+		self.myHint.setHeight(self.myHint.height() + 10)
+		return self.myHint
 
 class ToolSelector(QListView):
 	def __init__(self, parent = None):
@@ -107,7 +125,8 @@ class ToolSelector(QListView):
 		self.setSizePolicy(QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding))
 
 		self.setSpacing(0)
-		self.setItemDelegate(ToolSelectorDelegate(self))
+		self.selectorDelegate = ToolSelectorDelegate(self)
+		self.setItemDelegate(self.selectorDelegate)
 
 		if appGlobal.getApp().isOSX:
 			font = self.font()
@@ -125,6 +144,15 @@ class ToolSelector(QListView):
 		else:
 			self.setStyleSheet("QListView::item { color: #444444; background: white; } QListView::item:selected{ background: #d8d8ff; }")
 	
+	def rebuild(self):
+		self.tools = []
+		for plugin in getApp().plugins.getPlugins():
+			if appGlobal.getApp().portfolio.isBank() and plugin.forBank():
+				self.addTool(plugin.name())
+			elif not appGlobal.getApp().portfolio.isBank() and plugin.forInvestment():
+				self.addTool(plugin.name())
+		self.finishAdd()
+	
 	def addTool(self, name):
 		self.tools.append(name)
 	
@@ -138,18 +166,21 @@ class ToolSelector(QListView):
 		self.loadTool(self.tools[row])
 	
 	def selectTool(self, name):
-		index = self.model().index(self.tools.index(name))
+		try:
+			index = self.model().index(self.tools.index(name))
+		except:
+			index = self.model().index(self.tools.index("Summary"))
 		self.selectionModel().setCurrentIndex(index, QItemSelectionModel.ClearAndSelect)
 	
 	def getSelectedTool(self):
 		return self.tools[self.selectionModel().currentIndex().row()]
 	
 	def loadTool(self, tool):
-		# Check for rebuilding portfolio
+		# Check for rebuilding portfolio if it's dirty
+		# Don't rebuild if background rebuilding is enabled
 		app = appGlobal.getApp()
 		app.main.setCursor(Qt.WaitCursor)
-		if app.portfolio.portPrefs.getDirty() and not tool in ["Transactions", "Settings", "News"]:
-			self.rebuilding = True
+		if app.portfolio.portPrefs.getDirty() and not tool in ["Transactions", "Settings", "News"] and not app.prefs.getBackgroundRebuild():
 			p =  app.portfolio
 
 			# Only show update window if app is started
@@ -164,7 +195,6 @@ class ToolSelector(QListView):
 			p.rebuildPositionHistory(app.stockData, update)
 			if update:
 				update.finishSubTask("Finished rebuilding " + p.name)
-			self.rebuilding = False
 
 		app.prefs.setLastTab(tool)
 		app.tool = app.plugins.getPlugin(tool)
@@ -178,7 +208,7 @@ class ToolSelector(QListView):
 		try:
 			app.toolWidget = app.tool.createWidget(app.main)
 		except Exception, inst:
-			app.toolWidget = QLabel("Error while loading plugin: %s" % inst)
+			app.toolWidget = QLabel("Error while loading plugin: %s\n%s" % (inst, "".join(traceback.format_exc())))
 		if app.toolWidget:
 			app.main.toolLayout.addWidget(app.toolWidget)
 		app.main.splitter.setSizes([200, app.prefs.getWidth() - 200])
@@ -212,33 +242,30 @@ class MainWindow(QMainWindow):
 		exit = QAction("Exit", self)
 		exit.setMenuRole(QAction.QuitRole)
 		exit.setShortcut("Ctrl+Q")
-		exit.setStatusTip("Exit Icarra2");
+		exit.setStatusTip("Exit Icarra2")
 		self.fileMenu.addAction(exit)
 		self.connect(exit, SIGNAL("triggered()"), self.exit)
 
 		about = QAction("About...", self)
 		about.setMenuRole(QAction.AboutRole)
-		about.setStatusTip("About Icarra2");
+		about.setStatusTip("About Icarra2")
 		self.fileMenu.addAction(about)
 		self.connect(about, SIGNAL("triggered()"), self.about)
 
 		prefsMenu = QAction("Preferences...", self)
 		prefsMenu.setMenuRole(QAction.PreferencesRole)
-		prefsMenu.setStatusTip("Preferences");
+		prefsMenu.setStatusTip("Preferences")
 		self.fileMenu.addAction(prefsMenu)
 		self.connect(prefsMenu, SIGNAL("triggered()"), self.preferences)
 
 		help = QAction("Help...", self)
 		help.setMenuRole(QAction.ApplicationSpecificRole)
-		help.setStatusTip("Icarra Help");
+		help.setStatusTip("Icarra Help")
 		self.fileMenu.addAction(help)
 		self.connect(help, SIGNAL("triggered()"), self.help)
 
 		# Create tool selector
 		self.ts = ToolSelector()
-		for plugin in getApp().plugins.getPlugins():
-			self.ts.addTool(plugin.name())
-		self.ts.finishAdd()
 		self.splitter.addWidget(self.ts)
 		
 		# Create tool holder
@@ -263,7 +290,7 @@ class MainWindow(QMainWindow):
 		QCoreApplication.exit()
 	
 	def about(self):
-		about = QMessageBox.about(self, "About Icarra2", "Icarra version %d.%d.%d\n\nby Jesse Liesch" % (appGlobal.gMajorVersion, appGlobal.gMinorVersion, appGlobal.gRelease))
+		about = QMessageBox.about(self, "About Icarra2", "Icarra version %d.%d.%d\n\nPyQT version %s\n\nby Jesse Liesch" % (appGlobal.gMajorVersion, appGlobal.gMinorVersion, appGlobal.gRelease, PYQT_VERSION_STR))
 	
 	def help(self):
 		help = HelpFrame()
@@ -273,8 +300,6 @@ class MainWindow(QMainWindow):
 
 global prefs
 prefs = Prefs()
-
-checkBenchmarks(prefs)
 
 class Icarra2(QApplication):
 	def __init__(self, *args):
@@ -293,13 +318,23 @@ class Icarra2(QApplication):
 		if hasattr(sys, "frozen"):
 			appPath = os.path.dirname(sys.argv[0])
 		else:
-			appPath = os.path.dirname(__file__)
+			appPath = os.getcwd()
 		appGlobal.setApp(self, appPath)
 		
 		# For thread safe errors
 		self.errorMutex = threading.Lock()
 		self.errorList = []
 		
+		# For checking tables
+		self.checkTableMutex = threading.Lock()
+		
+		# For starting and ending big tasks
+		self.bigTask = False
+		self.bigTaskCondition = threading.Condition()
+		
+		# The current statusUpdate dialog, if any
+		self.statusUpdate = False
+
 		# Initialize members
 		self.prefs = prefs
 		self.stockData = StockData()
@@ -312,6 +347,13 @@ class Icarra2(QApplication):
 		self.negativeColor = QColor(204, 0, 0)
 		self.alternateRowColor = QColor(216, 216, 255)
 
+		# Make sure benchmarks have been created
+		checkBenchmarks(prefs)
+		
+		# Nothing else if regression
+		if "--regression" in args[0] or "--broker-info" in args[0] or "--rebuild" in args[0] or "--import" in args[0]:
+			return
+		
 		timesRun = prefs.getTimesRun()
 		splashTime = datetime.datetime.now()
 		if timesRun > 0:
@@ -321,6 +363,10 @@ class Icarra2(QApplication):
 			self.splash = SplashScreenFrame()
 		else:
 			self.createSamplePortfolio()
+			
+			# Set all stocks as not having been downloaded
+			# This is important incase the startup process failed
+			self.stockData.db.query("update stockInfo set lastDownload='1900-01-01 00:00:00'")
 
 			# Start after creating sample portfolio
 			autoUpdater.start(self.stockData, self.prefs)
@@ -385,6 +431,7 @@ class Icarra2(QApplication):
 		prefs.setLastTab("Summary")
 		prefs.setLastPortfolio("Sample Portfolio")
 		p = Portfolio("Sample Portfolio")
+		p.db.beginTransaction()
 
 		t = Transaction(1, "__CASH__", datetime.datetime(2008, 1, 2), Transaction.deposit, amount = 20000)
 		t.save(p.db)
@@ -428,6 +475,8 @@ class Icarra2(QApplication):
 
 		t = Transaction(14, "XOM", datetime.datetime(2010, 11, 9), Transaction.dividend, amount = shares * 0.44)
 		t.save(p.db)
+
+		p.db.commitTransaction()
 	
 	def hideSplash(self):
 		if self.splash:
@@ -441,6 +490,26 @@ class Icarra2(QApplication):
 		self.tutorialTimer.setSingleShot(True)
 		self.connect(self.tutorialTimer, SIGNAL("timeout()"), self.checkIntro)
 		self.tutorialTimer.start()
+	
+	def beginBigTask(self, description, status = False):
+		# Get the bigTask mutex
+		# Check if we're currently doing anything big
+		# If so, wait for it to finish
+		self.bigTaskCondition.acquire()
+		while self.bigTask:
+			if status:
+				status.setStatus('Waiting while we finish ' + self.bigTask + '...')
+			self.bigTaskCondition.wait(1)
+		self.bigTask = description
+		self.bigTaskCondition.release()
+	
+	def endBigTask(self):
+		# We're no longer doing anything big
+		# Wake up anyone who is waiting
+		self.bigTaskCondition.acquire()
+		self.bigTask = False
+		self.bigTaskCondition.notify()
+		self.bigTaskCondition.release()
 
 	def loadPortfolio(self, name):
 		global prefs
@@ -460,19 +529,19 @@ class Icarra2(QApplication):
 			self.portfolio = Portfolio(name)
 			self.portfolio.readFromDb()
 	
+			self.main.ts.rebuild()
+
 			# Load tool
-			if self.tool:
-				self.main.ts.loadTool(self.main.ts.getSelectedTool())
-			else:
-				self.main.ts.selectTool(prefs.getLastTab())
+			self.main.ts.selectTool(prefs.getLastTab())
 			
 			# Enable or disable Import Transactions menu
-			if self.portfolio.isBrokerage():
+			if self.portfolio.isBrokerage() and not self.portfolio.isBank():
 				self.importTransactionsAction.setEnabled(True)
 			else:
 				self.importTransactionsAction.setEnabled(False)
-		except:
-			pass # Invalid portfolio, nothing to load
+		except Exception, e:
+			self.toolWidget = QLabel("Error while loading plugin: %s\n%s" % (e, "".join(traceback.format_exc())))
+			self.main.toolLayout.addWidget(self.toolWidget)
 	
 	def selectPortfolio(self, t):
 		# Check for new portfolio using shortcut
@@ -498,7 +567,6 @@ class Icarra2(QApplication):
 		self.plugins.getPlugin("Transactions").doImport()
 
 	def rebuildPortfolio(self):
-		self.rebuilding = True
 		p =  self.portfolio
 		update = StatusUpdate(app.main, modal = False)
 		
@@ -507,18 +575,17 @@ class Icarra2(QApplication):
 		update.setSubTask(100)
 		p.rebuildPositionHistory(app.stockData, update)
 		update.finishSubTask("Finished rebuilding " + p.name)
-		self.rebuilding = False
 
 	def rebuildPortfoliosMenu(self, load = True):
 		global prefs
-		portfolios = prefs.getPortfolios()
+		portfolios = sorted(prefs.getPortfolios())
 		
 		# Add or clear menu
 		if "portfoliosMenu" in dir(self):
 			self.portfoliosMenu.clear()
 		else:
 			self.portfoliosMenu = QMenu("Portfolio", self.main)
-			self.connect(self.portfoliosMenu, SIGNAL("triggered(QAction*)"), self.selectPortfolio);
+			self.connect(self.portfoliosMenu, SIGNAL("triggered(QAction*)"), self.selectPortfolio)
 			self.main.menuBar().addMenu(self.portfoliosMenu)
 		
 		n = QAction("New Portfolio", self.main)
@@ -562,9 +629,13 @@ class Icarra2(QApplication):
 		for a in benchmarks:
 			self.portfoliosMenu.addAction(a)
 
-	@staticmethod
-	def getMacAddress():
-		return uuid.getnode()
+	def getUniqueId(self):
+		# Create uniqueId
+		id = self.prefs.getUniqueId()
+		if id == "":
+			id = str(uuid.uuid4())
+			self.prefs.setUniqueId(id)
+		return id
 
 	def checkVersion(self):
 		# Check new
@@ -614,6 +685,49 @@ if "--broker-info" in sys.argv:
 	print "<p>Is your brokerage not supported?  Contact us in the forum &mdash; we would love to help!</p>"
 	app.exit()
 	sys.exit()
+
+if "--regression" in sys.argv:
+	import traceback
+	app = Icarra2(sys.argv)
+	
+	try:
+		import regression
+		regression.run(sys.argv)
+	except Exception, e:
+		print "Error running regression:"
+		print traceback.format_exc()
+	
+	app.exit()
+	sys.exit()
+
+if "--rebuild" in sys.argv:
+	import traceback
+	app = Icarra2(sys.argv)
+	
+	try:
+		p = Portfolio(sys.argv[2])
+		p.rebuildPositionHistory(app.stockData)
+	except Exception, e:
+		print "Error running regression:"
+		print traceback.format_exc()
+	
+	app.exit()
+	sys.exit()
+
+if "--import" in sys.argv:
+	f = open(sys.argv[2], "r")
+	if not f:
+		print "Could not open", sys.argv[2]
+		sys.exit()
+	data = f.read()
+	
+	for format in getFileFormats():
+		if format.Guess(data):
+			print "Is", format
+			(numNew, numOld, newTickers) = format.StartParse(data, False, False)
+			print "New: %d, Old: %d, Tickers: %s" % (numNew, numOld, newTickers)
+			sys.exit(0)
+	print "Did not guess", sys.argv[2]
 
 # Launch and run app
 # If exception, stop autoUpdater thread and re-raise exception

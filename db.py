@@ -34,7 +34,11 @@ import sys
 import os, os.path
 import threading
 import appGlobal
-import sqlite3
+try:
+	# Server
+	from pysqlite2 import dbapi2 as sqlite
+except:
+	import sqlite3 as sqlite
 
 class Db:
 	def __init__(self, name, host = "", user = "", password = ""):
@@ -43,15 +47,20 @@ class Db:
 		self.user = user
 		self.password = password
 		
-		# Check if data directory exists
-		if not os.path.isdir('data'):
-			os.mkdir('data')
-			
 		self.conns = {}
+		self.connParams = {}
 		self.transactionDepth = 0
+		self.lastQuery = False
 
 	def close(self):
 		self.getConn().close()
+
+	def getConnParam(self):
+		id = threading.currentThread().getName()
+		# Make sure we have a connection
+		if not id in self.conns:
+			self.getConn()
+		return self.connParams[id]
 		
 	def getConn(self):
 		def dict_factory(cursor, row):
@@ -69,10 +78,11 @@ class Db:
 		# Return connection for current thread
 		id = threading.currentThread().getName()
 		if not id in self.conns:
-			sqlite3.register_adapter(bool, boolAdapter)
+			sqlite.register_adapter(bool, boolAdapter)
 			
-			conn = sqlite3.connect(self.name, timeout=30, isolation_level = None)
+			conn = sqlite.connect(self.name, timeout=30, isolation_level = None)
 			conn.row_factory = dict_factory
+			self.connParams[id] = "?"
 			self.conns[id] = conn
 		return self.conns[id]
 	
@@ -82,10 +92,22 @@ class Db:
 		if not id in self.conns:
 			conn = adodb.NewADOConnection('mysql')
 			conn.Connect(self.host, self.user, self.password, self.name)
+
+			# Account for differently named functions
+			if not "execute" in dir(conn) and "Execute" in dir(conn):
+				conn.execute = conn.Execute
+
+			self.connParams[id] = "%s"
 			self.conns[id] = conn
 		return self.conns[id]
 
 	def checkTable(self, name, fields, index = [], unique = []):
+		# Only allow one thread to check a table at a time
+		# Otherwise we may have two threads create/update the same table
+		if appGlobal.getApp():
+			appGlobal.getApp().checkTableMutex.acquire()
+		
+		
 		# First create empty table
 		try:
 			createString = "create table if not exists " + name + "(";
@@ -147,15 +169,21 @@ class Db:
 
 			self.getConn().execute(s)
 		
+		if appGlobal.getApp():
+			appGlobal.getApp().checkTableMutex.release()
+		
 	def query(self, queryStr, tuple = False, reRaiseException = False):
+		reRaiseException = True
 		try:
 			if tuple:
+				self.lastQuery = "%s %s" % (queryStr, tuple)
 				return self.getConn().execute(queryStr, tuple)
 			else:
+				self.lastQuery = queryStr
 				return self.getConn().execute(queryStr)
 		except Exception, e:
 			if reRaiseException:
-				raise e
+				raise
 			
 			# Show error if possible
 			if appGlobal.getApp():
@@ -176,7 +204,7 @@ class Db:
 				else:
 					deleteStr += " and "
 				
-				deleteStr += key + "=?"
+				deleteStr += key + "=" + self.getConnParam()
 				deleteTuple.append(where[key])
 		
 		self.query(deleteStr, deleteTuple)
@@ -204,9 +232,9 @@ class Db:
 				else:
 					selectStr += key
 					if key.find("=") == -1 and key.find(">") == -1 and key.find("<") == -1:
-						selectStr += "=?"
+						selectStr += "=" + self.getConnParam()
 					else:
-						selectStr += "?"
+						selectStr += "" + self.getConnParam()
 					selectTuple.append(where[key])
 		
 		if orderBy:
@@ -235,9 +263,9 @@ class Db:
 		for i in data.keys():
 			if first:
 				first = False
-				insertStr += "?"
+				insertStr += self.getConnParam()
 			else:
-				insertStr += ", ?"
+				insertStr += ", " + self.getConnParam()
 			insertTuple.append(data[i]);
 
 		insertStr += ")"
@@ -255,7 +283,7 @@ class Db:
 				first = False
 			else:
 				updateStr += ", "
-			updateStr += key + "=?"
+			updateStr += key + "=" + self.getConnParam()
 			updateTuple.append(data[key])
 
 		updateStr += " where "
@@ -269,7 +297,7 @@ class Db:
 			if where[key] == "is null" or where[key] == "is not null":
 				updateStr += key + " " + where[key]
 			else:
-				updateStr += key + "=?"
+				updateStr += key + "=" + self.getConnParam()
 				updateTuple.append(where[key])
 
 		return self.query(updateStr, updateTuple)
@@ -296,19 +324,20 @@ class Db:
 		return False
 
 	def beginTransaction(self):
-		if self.transactionDepth == 0:
-			self.getConn().execute("begin transaction")
 		self.transactionDepth += 1
+		if self.transactionDepth == 1:
+			self.getConn().execute("begin immediate transaction")
 		#if self.transactionDepth == 1:
 		#	print "DB begin transaction"
 	
 	def rollbackTransaction(self):
-		self.getConn().execute("rollback transaction")
 		self.transactionDepth = 0
+		self.getConn().execute("rollback transaction")
 		#print "DB rollback transaction"
 
 	def commitTransaction(self):
 		if self.transactionDepth == 1:
+			self.transactionDepth = 0
 			self.getConn().execute("commit transaction")
 		if self.transactionDepth >= 1:
 			self.transactionDepth -= 1

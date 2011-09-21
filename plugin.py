@@ -17,6 +17,12 @@ class PluginBase(QWidget):
 		'Return a 3-tuple of the plugin version'
 		return (0, 0, 0)
 
+	def forInvestment(self):
+		return True
+
+	def forBank(self):
+		return True
+
 	def initialize(self):
 		'Called on startup.  Called sequentially for each plugin.  This may not be the first function that is called.'
 		pass

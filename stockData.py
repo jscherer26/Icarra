@@ -32,6 +32,7 @@ import zlib
 import binascii
 
 import appGlobal
+from transaction import *
 
 class StockData:
 	def __init__(self):
@@ -90,26 +91,64 @@ class StockData:
 			if status:
 				status.setStatus("Finished Downloading Stock Data (no stocks)", 100)
 			return
-
-		update = {}
-		for t in tickers:
-			if t == "__CASH__":
-				continue
-			
-			last = self.getLastDate(t)
-			if last:
-				update[t] = last
-			else:
-				update[t] = datetime.datetime(1900, 1, 1)
-
-		if status:
-			status.setStatus("Querying server", 40)
-		gotData = self.getFromServer(update, status)
-		if status:
-			status.setStatus("Finished Downloading Stock Data", 100)
 		
+		# Only allow one download at a time
+		appGlobal.getApp().beginBigTask('downloading stock data', status)
+
+		try:
+			update = {}
+			for t in tickers:
+				if t == "__CASH__":
+					continue
+				self.setLastDownload(t)
+				
+				last = self.getLastDate(t)
+				if last:
+					update[t] = last
+				else:
+					update[t] = datetime.datetime(1900, 1, 1)
+	
+			if status:
+				status.setStatus("Querying server", 40)
+			gotData = self.getFromServer(update, status)
+			if status:
+				status.setStatus("Finished Downloading Stock Data", 100)
+			
+			appGlobal.getApp().endBigTask()
+		except:
+			# End big task, re-raise exception
+			appGlobal.getApp().endBigTask()
+			raise
+
 		return gotData
 	
+	def updatePortfolioStocks(self, portfolio, status = False):
+		'''Downloading new data for every ticker in the portfolio.
+		Only applies to stocks that have not been downloaded in 4 hours.
+		Return True if new data is received.'''
+		
+		update = {}
+		for ticker in portfolio.getTickers(includeAllocation = True):
+			if ticker.startswith("__") and ticker.endswith("__"):
+				continue
+			last = self.getLastDownload(ticker)
+			
+			# Include if never updated
+			if last is False:
+				update[ticker] = datetime.datetime(1900, 1, 1)
+				self.setLastDownload(ticker)
+			elif datetime.datetime.now() - last > datetime.timedelta(hours = 4):
+				# Append if downloaded in less than 4 hours
+				update[ticker] = last
+				self.setLastDownload(ticker)
+
+		if update:
+			if status:
+				status.setStatus("Querying server")
+			return self.getFromServer(update, status)
+
+		return False
+
 	def suggest(self, ticker):
 		try:
 			request = {"ticker": str(ticker)}
@@ -133,7 +172,7 @@ class StockData:
 				del request[ticker]
 			else:
 				request[ticker] = date.strftime("%Y-%m-%d %H:%M:%S")
-		request["__MACADDRESS__"] = str(appGlobal.getApp().getMacAddress())
+		request["__UNIQUEID__"] = str(appGlobal.getApp().getUniqueId())
 
 		try:
 			if status:
@@ -165,13 +204,12 @@ class StockData:
 			if values[0] == "#vers" and len(values) == 4:
 				appGlobal.getApp().prefs.updateLatestVersion(int(values[1]), int(values[2]), int(values[3]))
 			if values[0] == "stock" and len(values) == 8:
-				values[1] = values[1].upper()
 				on = {
-					"ticker": icarraTickers[values[1]],
+					"ticker": icarraTickers[values[1].upper()],
 					"date": values[2]
 					}
 				if self.db.insertOrUpdate("stockData", {
-					"ticker": icarraTickers[values[1]],
+					"ticker": icarraTickers[values[1].upper()],
 					"date": values[2],
 					"open": values[3],
 					"high": values[4],
@@ -182,13 +220,13 @@ class StockData:
 					gotData = True
 			elif values[0] == "dividend" and len(values) == 4:
 				if self.db.insertOrUpdate("stockDividends", {
-					"ticker": icarraTickers[values[1]],
+					"ticker": icarraTickers[values[1].upper()],
 					"date": values[2],
 					"value": values[3]}):
 					gotData = True
 			elif values[0] == "split" and len(values) == 4:
 				if self.db.insertOrUpdate("stockSplits", {
-					"ticker": icarraTickers[values[1]],
+					"ticker": icarraTickers[values[1].upper()],
 					"date": values[2],
 					"value": values[3]}):
 					gotData = True
@@ -236,12 +274,12 @@ class StockData:
 		else:
 			icarraTicker = row["icarraTicker"]
 			if icarraTicker == None or icarraTicker == "":
-				return ticker
+				return ticker.upper()
 			else:
-				return icarraTicker
+				return icarraTicker.upper()
 	
 	def setIcarraTicker(self, ticker, icarraTicker):
-		data = {"ticker": ticker, "icarraTicker": icarraTicker}
+		data = {"ticker": ticker, "icarraTicker": icarraTicker.upper()}
 		where = {"ticker": ticker}
 		self.db.update("stockInfo", data = data, where = where)
 	
@@ -269,7 +307,7 @@ class StockData:
 			if row["lastDownload"] == None or row["lastDownload"] == "":
 				return False
 			else:
-				return datetime.datetime.strptime(row["lastDownload"], "%Y-%m-%d %H:%M:%S")
+				return Transaction.parseDate(row["lastDownload"])
 	
 	def setLastDownload(self, ticker):
 		last = datetime.datetime.now()
@@ -278,7 +316,7 @@ class StockData:
 		self.db.insertOrUpdate("stockInfo", data = data, on = on)
 		
 	def getTickers(self):
-		cursor = self.db.query("select distinct(ticker) as ticker from stockData")
+		cursor = self.db.query("select distinct(ticker) as ticker from stockInfo")
 
 		ret = []
 		for row in cursor.fetchall():
@@ -294,12 +332,12 @@ class StockData:
 			return False
 
 		return {
-			"date": datetime.datetime.strptime(row["date"], "%Y-%m-%d %H:%M:%S"),
-			"open": row["open"],
-			"high": row["high"],
-			"low": row["low"],
-			"close": row["close"],
-			"volume": row["volume"]}
+			"date": Transaction.parseDate(row["date"]),
+			"open": float(row["open"]),
+			"high": float(row["high"]),
+			"low": float(row["low"]),
+			"close": float(row["close"]),
+			"volume": float(row["volume"])}
 
 	def getDividend(self, ticker, date):
 		where = {"ticker": ticker.upper(), "date": date.strftime("%Y-%m-%d 00:00:00")}
@@ -310,7 +348,7 @@ class StockData:
 			return False
 
 		return {
-			"date": datetime.datetime.strptime(row["date"], "%Y-%m-%d %H:%M:%S"),
+			"date": Transaction.parseDate(row["date"]),
 			"value": float(row["value"])}
 
 	def getDividends(self, ticker, desc = False):
@@ -320,7 +358,7 @@ class StockData:
 		res = []
 		for row in cursor.fetchall():
 			res.append({
-				"date": datetime.datetime.strptime(row["date"], "%Y-%m-%d %H:%M:%S"),
+				"date": Transaction.parseDate(row["date"]),
 				"value": float(row["value"])})
 		
 		if desc:
@@ -337,7 +375,7 @@ class StockData:
 		res = []
 		for row in cursor.fetchall():
 			res.append({
-				"date": datetime.datetime.strptime(row["date"], "%Y-%m-%d %H:%M:%S"),
+				"date": Transaction.parseDate(row["date"]),
 				"value": float(row["value"])})
 		
 		if desc:
@@ -345,7 +383,7 @@ class StockData:
 		
 		return res
 
-	def getPrices(self, ticker, endDate = False, startDate = False, desc = False, limit = False):
+	def getPrices(self, ticker, endDate = False, startDate = False, desc = False, limit = False, splitAdjusted = False):
 		where = {"ticker": ticker.upper()}
 		order = "ticker, date asc"
 		if startDate:
@@ -358,13 +396,31 @@ class StockData:
 		for row in res.fetchall():
 			ticker = row["ticker"].upper()
 			ret.append({
-				"date": datetime.datetime.strptime(row["date"], "%Y-%m-%d %H:%M:%S"),
+				"date": Transaction.parseDate(row["date"]),
 				"open": float(row["open"]),
 				"high": float(row["high"]),
 				"low": float(row["low"]),
 				"close": float(row["close"]),
 				"volume": float(row["volume"])})
 		
+		if splitAdjusted:
+			splitFactor = 1
+			splits = self.getSplits(ticker, firstDate = startDate, lastDate = endDate)
+			pi = 0
+			si = 0
+			while pi < len(ret):
+				if si < len(splits):
+					if splits[si]['date'] <= ret[pi]['date']:
+						splitFactor *= splits[si]['value']
+						si += 1
+				
+				if splitFactor != 1:
+					ret[pi]['high'] = ret[pi]['high'] * splitFactor
+					ret[pi]['low'] = ret[pi]['low'] * splitFactor
+					ret[pi]['open'] = ret[pi]['open'] * splitFactor
+					ret[pi]['close'] = ret[pi]['close'] * splitFactor
+				pi += 1
+
 		if desc:
 			ret.reverse()
 
@@ -376,7 +432,7 @@ class StockData:
 		if not row:
 			return False
 		else:
-			return datetime.datetime.strptime(row["date"], "%Y-%m-%d %H:%M:%S")
+			return Transaction.parseDate(row["date"])
 
 	def getFirstDate(self, ticker):
 		res = self.db.select("stockData", where = {"ticker": ticker.upper()}, orderBy = "date asc", limit = 1)
@@ -384,7 +440,7 @@ class StockData:
 		if not row:
 			return False
 		else:
-			return datetime.datetime.strptime(row["date"], "%Y-%m-%d %H:%M:%S")
+			return Transaction.parseDate(row["date"])
 		
 	def addNews(self, ticker, date, title, summary, url):
 		data = {
@@ -418,7 +474,7 @@ class StockData:
 		ret = []
 		res = self.db.select("stockNews", orderBy = "date desc", where = where)
 		for row in res.fetchall():
-			row["date"] = datetime.datetime.strptime(row["date"], "%Y-%m-%d %H:%M:%S")
+			row["date"] = Transaction.parseDate(row["date"])
 			ret.append(row)
 		
 		return ret

@@ -30,78 +30,14 @@ from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 
 import appGlobal
+import chart
 
-oneYearVsBenchmark = 1
-oneYearVsBenchmarkCash = 2
-threeMonthsVsBenchmark = 3
-threeMonthsVsBenchmarkCash = 4
-inceptionVsBenchmark = 5
-inceptionVsBenchmarkCash = 6
-oneMonthMovers = 7
-threeMonthMovers = 8
-oneYearMovers = 9
-
-def getSummaryChartTypes():
-	return {threeMonthsVsBenchmarkCash: "Three Months vs. Benchmark ($)",
-		threeMonthsVsBenchmark: "Three Months vs. Benchmark (%)",
-		oneYearVsBenchmarkCash: "One Year vs. Benchmark ($)",
-		oneYearVsBenchmark: "One Year vs. Benchmark (%)",
-		inceptionVsBenchmarkCash: "Since Inception vs. Benchmark ($)",
-		inceptionVsBenchmark: "Since Inception vs. Benchmark (%)",
-		oneMonthMovers: "One Month Movers",
-		threeMonthMovers: "Three Month Movers",
-		oneYearMovers: "One Year Movers"}
-
-class ChartWidget(QWidget):
+class ChartWidget(QWidget, chart.Chart):
 	def __init__(self, parent = None):
 		QWidget.__init__(self, parent)
+		chart.Chart.__init__(self)
 		self.setMinimumSize(300, 200)
-		self.reset()
 	
-	def reset(self):
-		self.xs = []
-		self.ys = []
-		self.buyXs = []
-		self.buyYs = []
-		self.sellXs = []
-		self.sellYs = []
-		self.labels = []
-		self.colors = []
-		self.dashed = []
-
-		# Display parameters
-		self.margin = 20
-		self.titleMargin = 10
-		self.lineWidth = 2.5
-		self.labelSize = 8
-		self.legendSize = 9
-		self.transactionSize = 16
-		self.title = False
-		self.titleSize = 18
-		self.pixelsPerTickX = 80
-		self.pixelsPerTickY = 80
-		self.tickSize = 5
-		self.pixelsPerPoint = 1
-		self.legend = False
-		self.xAxisType = "date"
-		self.yAxisType = "dollars"
-		self.doGradient = False
-
-	def addXY(self, x, y, label = False, color = (0.0, 0.8, 0.0), dashed = False):
-		self.xs.append(x)
-		self.ys.append(y)
-		self.labels.append(label)
-		self.colors.append(color)
-		self.dashed.append(dashed)
-	
-	def addBuys(self, buyX, buyY):
-		self.buyXs = buyX
-		self.buyYs = buyY
-
-	def addSells(self, sellX, sellY):
-		self.sellXs = sellX
-		self.sellYs = sellY
-
 	@staticmethod
 	def totalSeconds(td):
 		return td.toordinal() + td.microsecond / 1e6
@@ -109,16 +45,17 @@ class ChartWidget(QWidget):
 	def formatYLabel(self, y):
 		if self.yAxisType == "dollars":
 			if y > 1e12:
-				return "$%.1fT" % (y / 1e12)
+				return "$%.1fT" % round(y / 1e12, 1)
 			elif y > 1e9:
-				return "$%.1fB" % (y / 1e9)
+				return "$%.1fB" % round(y / 1e9, 1)
 			elif y > 1e6:
-				return "$%.1fM" % (y / 1e6)
+				return "$%.1fM" % round(y / 1e6, 1)
 			elif y > 1e3:
-				return "$%.1fK" % (y / 1e3)
-			return "$%d" % y
+				return "$%.1fK" % round(y / 1e3, 1)
+			else:
+				return "$%.2f" % round(y, 2)
 		elif self.yAxisType == "percent":
-			return "%.1f%%" % (100 * y + 0.04999)
+			return "%.1f%%" % round(100 * y, 1)
 
 	def formatXLabel(self, x):
 		if self.xAxisType == "date":
@@ -154,7 +91,7 @@ class ChartWidget(QWidget):
 				m = w
 		return m
 
-	def drawString(self, string, x, y, size, align = "left", width = False):
+	def drawString(self, string, x, y, size, align = "left", width = False, bold = False, outline = False):
 		if size >= 18:
 			font = "times new roman"
 		else:
@@ -171,18 +108,28 @@ class ChartWidget(QWidget):
 		elif align.find("top") > -1:
 			y += size
 
-		app = appGlobal.getApp()
-		if app.isOSX:
-			self.painter.setFont(QFont(font, size * 1.4))
+		# Build font
+		if appGlobal.getApp().isOSX:
+			newFont = QFont(font, size * 1.4)
 		else:
 			newFont = QFont(font, size)
 			if size >= 18:
 				newFont.setBold(True)
-			self.painter.setFont(newFont)
-		self.painter.drawText(x, y, string)
+		if bold:
+			newFont.setBold(True)
+		self.painter.setFont(newFont)
+
+		if outline:
+			path = QPainterPath()
+			path.addText(x, y, newFont, string)
+			#painter.setPen(pen)
+			#painter.setBrush(brush)
+			self.painter.drawPath(path)
+		else:
+			self.painter.drawText(x, y, string)
 	
 	def paintEvent(self, event):
-		if len(self.xs) == 0:
+		if (len(self.xs) == 0 or len(self.xs[0]) == 0) and len(self.dividendXs) == 0:
 			return
 		
 		painter = QPainter(self)
@@ -192,18 +139,55 @@ class ChartWidget(QWidget):
 		xyArray = []
 		
 		# Get min/max x, y
-		minX = self.xs[0][0]
-		maxX = self.xs[0][0]
-		minY = self.ys[0][0]
-		maxY = self.ys[0][0]
-		numXs = 0
-		for x in self.xs:
-			minX = min(minX, min(x))
-			maxX = max(maxX, max(x))
-			numXs = max(numXs, len(x))
-		for y in self.ys:
-			minY = min(minY, min(y))
-			maxY = max(maxY, max(y))
+		# If no xs or ys then assume we have dividends
+		if len(self.xs) and len(self.xs[0]) > 0:
+			minX = self.xs[0][0]
+			maxX = self.xs[0][0]
+			minY = self.ys[0][0]
+			maxY = self.ys[0][0]
+			numXs = 0
+			for x in self.xs:
+				minX = min(minX, min(x))
+				maxX = max(maxX, max(x))
+				numXs = max(numXs, len(x))
+			for y in self.ys:
+				minY = min(minY, min(y))
+				maxY = max(maxY, max(y))
+		else:
+			minX = self.dividendXs[0]
+			maxX = self.dividendXs[0]
+			minY = self.dividendYs[0]
+			maxY = self.dividendYs[0]
+			numXs = len(self.dividendXs)
+		if self.dividendXs:
+			numXs = max(numXs, len(self.dividendXs))
+			minX = min(minX, min(self.dividendXs))
+			maxX = max(maxX, max(self.dividendXs))
+			minY = min(minY, min(self.dividendYs))
+			maxY = max(maxY, max(self.dividendYs))
+		
+		if self.zeroYAxis and minY > 0:
+			minY = 0
+		
+		# Add extra if only one Y value
+		if minY == maxY:
+			if minY == 0:
+				maxY = 1
+			else:
+				if minY > 0:
+					minY *= 0.9
+				else:
+					minY *= 1.1
+				if maxY > 0:
+					maxY *= 1.1
+				else:
+					maxY *= 0.9
+		
+		# Add extra if only one X value
+		oneDataPoint = minX == maxX
+		if oneDataPoint:
+			minX -= datetime.timedelta(1)
+			maxX += datetime.timedelta(1)
 		
 		minX = self.totalSeconds(minX)
 		maxX = self.totalSeconds(maxX)
@@ -279,7 +263,7 @@ class ChartWidget(QWidget):
 
 		yTicks = []
 		yLabels = []
-		if self.yAxisType == "percent":
+		if self.yAxisType == "percent" and spanY > 0:
 			# For percentage start at 0%, then go up
 			tick = -minY / spanY * chartHeight
 			while tick <= chartHeight + 1e-6:
@@ -310,13 +294,15 @@ class ChartWidget(QWidget):
 		rhsLabels = []
 		rhsLabelWidth = 0
 		for y in ys:
-			value = y[-1]
-			label = self.formatYLabel(value)
-			rhsValues.append(value)
-			rhsLabels.append(label)
-			width = self.stringWidth(label, self.labelSize + 1)
-			if width > rhsLabelWidth:
-				rhsLabelWidth = width
+			if len(y) > 0:
+				value = y[-1]
+				label = self.formatYLabel(value)
+				rhsValues.append(value)
+				rhsLabels.append(label)
+				width = self.stringWidth(label, self.labelSize + 1)
+				rhsLabelWidth = max(rhsLabelWidth, width)
+		maxLabel = self.formatYLabel(maxY)
+		rhsLabelWidth = max(rhsLabelWidth, self.stringWidth(maxLabel, self.labelSize + 1))
 		chartWidth -= rhsLabelWidth + 5
 
 		# Determine X tick marks
@@ -424,7 +410,7 @@ class ChartWidget(QWidget):
 		painter.setRenderHint(QPainter.Antialiasing)
 
 		# If gradient, draw it first
-		if self.doGradient:
+		if self.doGradient and not oneDataPoint:
 			path = QPainterPath()
 			gradientPath = QPainterPath()
 			moveTo = True
@@ -434,7 +420,10 @@ class ChartWidget(QWidget):
 					moveTo = True
 					continue
 
-				x = axesX + (self.totalSeconds(xs[0][j]) - minX) / spanX * (chartWidth + 0)
+				if spanX > 0:
+					x = axesX + (self.totalSeconds(xs[0][j]) - minX) / spanX * (chartWidth + 0)
+				else:
+					x = axesX
 				if spanY > 0:
 					y = axesY - (ys[0][j] - minY) / spanY * chartHeight
 				else:
@@ -447,9 +436,13 @@ class ChartWidget(QWidget):
 					path.lineTo(x, y)
 			
 			gradientPath.addPath(path)
+			if spanX > 0:
+				firstX = axesX + (self.totalSeconds(xs[0][0]) - minX) / spanX * (chartWidth + 0)
+			else:
+				firstX = axesX
 			gradientPath.lineTo(x + 1, y)
 			gradientPath.lineTo(x + 1, axesY)
-			gradientPath.lineTo(axesX, axesY)
+			gradientPath.lineTo(firstX, axesY)
 			gradientPath.closeSubpath()
 
 			myGradient = QLinearGradient(QPointF(0, axesY), QPointF(0, axesY - chartHeight))
@@ -461,7 +454,7 @@ class ChartWidget(QWidget):
 			painter.setPen(QColor(0, 0, 0, 0))
 			painter.drawPath(gradientPath)
 
-			if self.dashed[i]:
+			if self.dashed[0]:
 				# Lighten color if dashed
 				pen = QPen(QColor(255 * self.colors[0][0], 255 * self.colors[0][1], 255 * self.colors[0][2], 100))
 			else:
@@ -507,11 +500,26 @@ class ChartWidget(QWidget):
 					path.lineTo(x, y)
 
 			painter.drawPath(path)
+		
+		# Draw a circle if one data point
+		# Note that no line will be drawn
+		if oneDataPoint:
+			for i in range(len(xs) - 1, -1, -1):
+				pen = QPen(QColor(255 * self.colors[i][0], 255 * self.colors[i][1], 255 * self.colors[i][2]))
+				pen.setWidth(self.lineWidth)
+				painter.setPen(pen)
+
+				x = axesX + (self.totalSeconds(xs[i][0]) - minX) / spanX * chartWidth
+				if spanY > 0:
+					y = axesY - (ys[i][0] - minY) / spanY * chartHeight
+				else:
+					y = axesY
+				painter.drawEllipse(x - 1, y - 1, 3, 3)
 
 		# Draw buys
 		if self.buyXs:
 			painter.setPen(QPen(QColor(51, 51, 51)))
-			painter.setBrush(QBrush(Qt.green))
+			painter.setBrush(QBrush(QColor(0, 180, 0)))
 			for i in range(len(self.buyXs)):
 				x = axesX + (self.totalSeconds(self.buyXs[i]) - minX) / spanX * chartWidth
 				y = self.buyYs[i]
@@ -519,9 +527,9 @@ class ChartWidget(QWidget):
 					y = axesY - (self.buyYs[i] - minY) / spanY * chartHeight
 				else:
 					y = axesY
-				
-				painter.drawConvexPolygon(QPolygonF([QPointF(x, y), QPointF(x + self.transactionSize * 2/3, y + self.transactionSize), QPointF(x - self.transactionSize * 2/3, y + self.transactionSize)]))
 
+				painter.drawConvexPolygon(QPolygonF([QPointF(x, y), QPointF(x + self.transactionSize * 2/3, y + self.transactionSize), QPointF(x - self.transactionSize * 2/3, y + self.transactionSize)]))
+				
 		# Draw sells
 		if self.sellXs:
 			painter.setPen(QPen(QColor(51, 51, 51)))
@@ -535,6 +543,76 @@ class ChartWidget(QWidget):
 					y = axesY
 				
 				painter.drawConvexPolygon(QPolygonF([QPointF(x, y), QPointF(x - self.transactionSize * 2/3, y - self.transactionSize), QPointF(x + self.transactionSize * 2/3, y - self.transactionSize)]))
+
+		# Draw splits
+		if self.splitXs:
+			painter.setPen(QPen(QColor(51, 51, 51)))
+			painter.setBrush(QBrush(Qt.gray))
+			for i in range(len(self.splitXs)):
+				x = axesX + (self.totalSeconds(self.splitXs[i]) - minX) / spanX * chartWidth
+				y = self.splitYs[i]
+				if spanY > 0:
+					y = axesY - (self.splitYs[i] - minY) / spanY * chartHeight
+				else:
+					y = axesY
+				
+				painter.drawConvexPolygon(QPolygonF([
+					QPointF(x - self.transactionSize / 2, y + self.transactionSize / 2),
+					QPointF(x - self.transactionSize / 2, y - self.transactionSize / 2),
+					QPointF(x - 2, y - self.transactionSize / 2),
+					QPointF(x - 2, y + self.transactionSize / 2)]))
+				painter.drawConvexPolygon(QPolygonF([
+					QPointF(x + 2, y + self.transactionSize / 2),
+					QPointF(x + 2, y - self.transactionSize / 2),
+					QPointF(x + self.transactionSize / 2, y - self.transactionSize / 2),
+					QPointF(x + self.transactionSize / 2, y + self.transactionSize / 2)]))
+
+		# Draw dividends
+		if self.dividendXs:
+			for i in range(len(self.dividendXs)):
+				x = axesX + (self.totalSeconds(self.dividendXs[i]) - minX) / spanX * chartWidth
+				y = self.dividendYs[i]
+				if spanY > 0:
+					y = axesY - (self.dividendYs[i] - minY) / spanY * chartHeight
+				else:
+					y = axesY
+
+				painter.setPen(QPen(QColor(0, 120, 0)))
+				painter.setBrush(QBrush(QColor(0, 180, 0)))
+				self.drawString("$", x, y, self.transactionSize * 0.75, "center middle", bold = True, outline = True)
+
+		# Draw shorts
+		if self.shortXs:
+			painter.setBrush(QBrush(Qt.red))
+			for i in range(len(self.shortXs)):
+				x = axesX + (self.totalSeconds(self.shortXs[i]) - minX) / spanX * chartWidth
+				y = self.shortYs[i]
+				if spanY > 0:
+					y = axesY - (self.shortYs[i] - minY) / spanY * chartHeight
+				else:
+					y = axesY
+				
+				painter.setPen(QPen(QColor(51, 51, 51)))
+				painter.drawConvexPolygon(QPolygonF([QPointF(x, y), QPointF(x - self.transactionSize * 2/3, y - self.transactionSize), QPointF(x + self.transactionSize * 2/3, y - self.transactionSize)]))
+				painter.setPen(QPen(Qt.white))
+				self.drawString("s", x, y - self.transactionSize * 2 / 3, 9, "center middle")
+
+
+		# Draw covers
+		if self.coverXs:
+			painter.setBrush(QBrush(QColor(0, 180, 0)))
+			for i in range(len(self.coverXs)):
+				x = axesX + (self.totalSeconds(self.coverXs[i]) - minX) / spanX * chartWidth
+				y = self.coverYs[i]
+				if spanY > 0:
+					y = axesY - (self.coverYs[i] - minY) / spanY * chartHeight
+				else:
+					y = axesY
+
+				painter.setPen(QPen(QColor(51, 51, 51)))
+				painter.drawConvexPolygon(QPolygonF([QPointF(x, y), QPointF(x + self.transactionSize * 2/3, y + self.transactionSize), QPointF(x - self.transactionSize * 2/3, y + self.transactionSize)]))
+				painter.setPen(QPen(Qt.white))
+				self.drawString("c", x, y + self.transactionSize * 2 / 3, 9, "center middle")
 
 		painter.end()
 		return

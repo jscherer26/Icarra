@@ -28,6 +28,7 @@ import datetime
 import httplib, urllib2, re
 
 ofxErrors = {
+	2000: "General error",
 	2003: "Account not found",
 	15500: "Signon invalid"
 }
@@ -175,11 +176,12 @@ def getAccount(username, password, b):
 		print result
 		return (False, "Account not found")
 
-def getOfx(username, password, brokerage, account, status):
+def getOfx(username, password, brokerage, account, status = False):
 	if account == "" or not account:
 		return ""
 	
-	status.setStatus("Downloading transaction history", 20)
+	if status:
+		status.setStatus("Downloading transaction history", 20)
 	
 	# Download for every account specified
 	accounts = account.split(",")

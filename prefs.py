@@ -58,6 +58,9 @@ class Prefs:
 				os.mkdir(self.prefsRootPath())
 			
 			self.db = Db(os.path.join(self.prefsRootPath(), "prefs.db"))
+
+			self.db.beginTransaction()
+
 			self.db.checkTable("prefs", [
 				{"name": "name", "type": "text"},
 				{"name": "value", "type": "text"}])
@@ -79,11 +82,17 @@ class Prefs:
 			self.checkDefaults("lastTab", "Summary")
 			self.checkDefaults("ofxDebug", "False")
 			self.checkDefaults("showCashInTransactions", "False")
+			self.checkDefaults("backgroundRebuild", "True")
+			self.checkDefaults("backgroundImport", "False")
+			self.checkDefaults("lastBackgroundImport", "2000-01-01 00:00:00")
 			self.checkDefaults("ignoreVersion", "0.0.0")
 			self.checkDefaults("lastVersionReminder", "2000-01-01 00:00:00")
 			self.checkDefaults("latestVersion", "0.0.0")
 			self.checkDefaults("timesRun", "0")
 			self.checkDefaults("tutorial", "0")
+			self.checkDefaults("uniqueId", "")
+			
+			self.db.commitTransaction()
 			
 			# Save global in Prefs
 			global prefs
@@ -96,6 +105,10 @@ class Prefs:
 			self.db.insert("prefs", {"name": name, "value": value})
 			self.db.commitTransaction()
 	
+	def getAllPrefs(self):
+		res = self.db.select("prefs")
+		return res.fetchall()
+
 	def getPreference(self, name):
 		cursor = self.db.select("prefs", where = {"name": name})
 		row = cursor.fetchone()
@@ -127,6 +140,15 @@ class Prefs:
 	def getShowCashInTransactions(self):
 		return self.getPreference("showCashInTransactions") == "True"
 
+	def getBackgroundRebuild(self):
+		return self.getPreference("backgroundRebuild") == "True"
+
+	def getBackgroundImport(self):
+		return self.getPreference("backgroundImport") == "True"
+
+	def getLastBackgroundImport(self):
+		return datetime.datetime.strptime(self.getPreference("lastBackgroundImport"), "%Y-%m-%d %H:%M:%S")
+
 	def getIgnoreVersion(self):
 		(newMajor, newMinor, newRelease) = self.getPreference("ignoreVersion").split(".")
 		return [int(newMajor), int(newMinor), int(newRelease)]
@@ -143,6 +165,9 @@ class Prefs:
 	
 	def getTutorial(self):
 		return int(self.getPreference("tutorial"))
+
+	def getUniqueId(self):
+		return self.getPreference("uniqueId")
 
 	def setSize(self, width, height):
 		self.db.beginTransaction()
@@ -176,6 +201,21 @@ class Prefs:
 		self.db.update("prefs", {"value": show}, {"name": "showCashInTransactions"})
 		self.db.commitTransaction()
 	
+	def setBackgroundRebuild(self, show):
+		self.db.beginTransaction()
+		self.db.update("prefs", {"value": show}, {"name": "backgroundRebuild"})
+		self.db.commitTransaction()
+	
+	def setBackgroundImport(self, show):
+		self.db.beginTransaction()
+		self.db.update("prefs", {"value": show}, {"name": "backgroundImport"})
+		self.db.commitTransaction()
+	
+	def setLastBackgroundImport(self):
+		self.db.beginTransaction()
+		self.db.update("prefs", {"value": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}, {"name": "lastBackgroundImport"})
+		self.db.commitTransaction()
+
 	def setIgnoreVersion(self, major, minor, release):
 		self.db.beginTransaction()
 		self.db.update("prefs", {"value": "%d.%d.%d" % (major, minor, release)}, {"name": "ignoreVersion"})
@@ -204,7 +244,12 @@ class Prefs:
 		self.db.beginTransaction()
 		self.db.update("prefs", {"value": t | bit}, {"name": "tutorial"})
 		self.db.commitTransaction()
-			
+	
+	def setUniqueId(self, unique):
+		self.db.beginTransaction()
+		self.db.update("prefs", {"value": unique}, {"name": "uniqueId"})
+		self.db.commitTransaction()
+	
 	def setOfxDebug(self, debug):
 		self.db.beginTransaction()
 		self.db.update("prefs", {"value": debug}, {"name": "ofxDebug"})
@@ -318,3 +363,4 @@ class Prefs:
 
 		return False
 		
+prefs = False

@@ -8,13 +8,13 @@ class Brokerage(BrokerageBase):
 		return "https://ofxs.ameritrade.com/cgi-bin/apps/OFX"
 	
 	def getOrg(self):
-		return "Ameritrade"
+		return "ameritrade.com"
 	
 	def getFid(self):
-		return ""
+		return "5024"
 	
 	def getBrokerId(self):
-		return "ameritrade"
+		return "ameritrade.com"
 	
 	def getNotes(self):
 		return ["Username is case sensitive",

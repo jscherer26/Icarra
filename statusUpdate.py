@@ -30,6 +30,9 @@ from ofxToolkit import *
 
 import appGlobal
 import time
+import datetime
+import traceback
+import threading
 
 class StatusUpdate(QDialog):
 	def __init__(self, parent, modal = True, closeOnFinish = False, cancelable = False, numTextLines = 1):
@@ -40,6 +43,7 @@ class StatusUpdate(QDialog):
 		self.cancelable = cancelable
 		self.modal = modal
 		self.numTextLines = 1
+		self.lastWaitYield = datetime.datetime.now()
 		if modal:
 			self.setModal(True)
 		self.subTasks = []
@@ -77,8 +81,6 @@ class StatusUpdate(QDialog):
 		self.errorsLabel.setVisible(False)
 		layout.addWidget(self.errorsLabel, 3, 0)
 		self.errors = QTextEdit()
-		self.errors.setMaximumHeight(80)
-		self.errors.setMaximumWidth(300)
 		self.errors.setReadOnly(True)
 		self.errors.setVisible(False)
 		layout.addWidget(self.errors, 3, 1)
@@ -103,6 +105,13 @@ class StatusUpdate(QDialog):
 			buttons.addWidget(self.ok)
 			self.connect(self.ok, SIGNAL("clicked()"), SLOT("accept()"))
 
+		# Set global status update
+		app = appGlobal.getApp()
+		if app.statusUpdate:
+			app.statusUpdate.addError("Multiple status updates")
+		else:
+			app.statusUpdate = self
+
 		self.show()
 		self.raise_()
 	
@@ -124,6 +133,10 @@ class StatusUpdate(QDialog):
 		self.appYield()
 
 	def setStatus(self, status = False, level = False):
+		# Make sure we are called from the main thread
+		if threading.currentThread().name != "MainThread":
+			return
+
 		if status:
 			self.status.setText(status)
 		if level:
@@ -138,18 +151,36 @@ class StatusUpdate(QDialog):
 		self.appYield()
 
 	def appYield(self):
-		appGlobal.getApp().processEvents()
+		self.repaint()
+
+		# Choose how long to sleep based on last yield time
+		# Yield up to 100ms at most once every half second
+		now = datetime.datetime.now()
+		if now - self.lastWaitYield > datetime.timedelta(milliseconds = 500):
+			self.lastWaitYield = now
+			waitMs = 100
+		else:
+			waitMs = 1
+		appGlobal.getApp().processEvents(QEventLoop.AllEvents, waitMs)
 	
 	def addMessage(self, message):
+		# Make sure we are called from the main thread
+		if threading.currentThread().name != "MainThread":
+			return
+
 		self.messagesLabel.setVisible(True)
 		self.messages.setVisible(True)
-		if  self.messages.toPlainText():
-			self.messages.append("\n" + message)
+		if self.messages.toPlainText():
+			self.messages.append(message)
 		else:
 			self.messages.setText(message)
 		self.appYield()
 
 	def addError(self, error):
+		# Make sure we are called from the main thread
+		if threading.currentThread().name != "MainThread":
+			return
+
 		self.errorsLabel.setVisible(True)
 		self.errors.setVisible(True)
 
@@ -163,6 +194,27 @@ class StatusUpdate(QDialog):
 
 		self.errors.scrollContentsBy(0, -1000000)
 		self.appYield()
+
+	def addException(self):
+		# Make sure we are called from the main thread
+		if threading.currentThread().name != "MainThread":
+			return
+
+		self.errorsLabel.setVisible(True)
+		self.errors.setVisible(True)
+
+		oldValue = self.errors.verticalScrollBar().value()
+		error = traceback.format_exc()
+		if  self.errors.toPlainText():
+			self.errors.append("\n" + error)
+		else:
+			self.errors.setText(error)
+		if oldValue == 0:
+			self.errors.verticalScrollBar().setValue(0)
+
+		self.errors.scrollContentsBy(0, -1000000)
+		self.appYield()
+
 	
 	def setFinished(self):
 		if self.finished:
@@ -170,6 +222,10 @@ class StatusUpdate(QDialog):
 		self.finished = True
 		
 		self.progress.setValue(100)
+
+		app = appGlobal.getApp()
+		if app:
+			app.statusUpdate = False
 		
 		if self.closeOnFinish:
 			# If closing on finish, no longer modal, then close and return

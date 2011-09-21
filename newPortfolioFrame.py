@@ -61,6 +61,9 @@ class NewPortfolio(QDialog):
   		self.brokerage.setChecked(True)
   		boxLayout.addWidget(self.brokerage)
 		
+  		self.bank = QRadioButton("Bank: Portfolio for banking, credit cards, savings")
+  		boxLayout.addWidget(self.bank)
+
   		self.benchmark = QRadioButton("Benchmark: Benchmark portfolio for investments based on an asset allocation")
   		boxLayout.addWidget(self.benchmark)
 
@@ -106,6 +109,9 @@ class NewPortfolio(QDialog):
 			app.loadPortfolio(newName)
 		elif self.combined.isChecked():
 			app.portfolio.makeCombined()
+			app.loadPortfolio(newName)
+		elif self.bank.isChecked():
+			app.portfolio.makeBank()
 			app.loadPortfolio(newName)
 		else:
 			app.loadPortfolio(newName)

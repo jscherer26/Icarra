@@ -26,6 +26,8 @@
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 
+import threading
+
 import prefs
 import appGlobal
 
@@ -57,11 +59,12 @@ class OfxDebugFrame(QWidget):
 		else:
 			str =  "OUTPUT\n----------\n" + ofx + "\n\n"
 		
-		# Print to stdout and to window
+		# Print to stdout and to window (if main thread)
 		print str
-		if self.text.toPlainText():
-			self.text.append("\n" + str)
-		else:
-			self.text.setText(str)
+		if threading.currentThread().name == "MainThread":
+			if self.text.toPlainText():
+				self.text.append("\n" + str)
+			else:
+				self.text.setText(str)
 
-		self.raise_()
+			self.raise_()

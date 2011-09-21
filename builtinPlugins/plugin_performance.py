@@ -38,190 +38,24 @@ class PerformanceModel(EditGridModel):
 		
 		self.dividend = True
 		self.current = False
+		self.type = "performance"
 
-	def rebuildPerformance(self):		
+	def rebuildPerformance(self):
 		stockData = appGlobal.getApp().stockData
 		portfolio = appGlobal.getApp().portfolio
-		tickers = portfolio.getTickers()
-		if len(tickers) > 0:
-			tickers.append("__COMBINED__")
 
-		firstDayOfYear = datetime.datetime.now()
-		firstDayOfYear = datetime.datetime(firstDayOfYear.year, 1, 1)
-		oneYear = datetime.datetime.now() - datetime.timedelta(365.25)
-		oneYear = datetime.datetime(oneYear.year, oneYear.month, oneYear.day)
-		twoYear = datetime.datetime.now() - datetime.timedelta(365.25 * 2)
-		twoYear = datetime.datetime(twoYear.year, twoYear.month, twoYear.day)
-		threeYear = datetime.datetime.now() - datetime.timedelta(365.25 * 3)
-		threeYear = datetime.datetime(threeYear.year, threeYear.month, threeYear.day)
-		fiveYear = datetime.datetime.now() - datetime.timedelta(365.25 * 5)
-		fiveYear = datetime.datetime(fiveYear.year, fiveYear.month, fiveYear.day)
-		
-		lastDay = portfolio.getEndDate()
-		
-		dates = [firstDayOfYear, oneYear, twoYear, threeYear, fiveYear, lastDay]
-
-		row = 0
-		tooltips = {}
-		data = []
-		rowMap = {}
-		self.rowMap = rowMap
-		performance = {}
-		
-		# Iterate through copy of tickers, incase elements re removed
-		portFirst = False
-		for t in copy.copy(tickers):
-			firstLast = portfolio.getPositionFirstLast(t)
-			if not firstLast:
-				tickers.remove(t)
+		table = portfolio.getPerformanceTable(self.current, self.dividend, self.type)
+		self.setColumns(table[0])
+		self.setData(table[1])
+		for col in range(len(table[0])):
+			if col == 0:
 				continue
-			(first, last) = firstLast
-			
-			if t == "__COMBINED__":
-				portFirst = first
+			self.setRedGreenColumn(col)
 
-			# Check that the position is current
-			if last != lastDay and self.current:
-				tickers.remove(t)
-				continue
-
-			performance[t] = {}
-			
-			# Compute YTD return
-			(ret, years) = portfolio.calculatePerformanceTimeWeighted(t, firstDayOfYear, last, dividend = self.dividend)
-			performance[t][firstDayOfYear] = (ret, years)
-			
-			# Compute year return
-			(ret, years) = portfolio.calculatePerformanceTimeWeighted(t, oneYear, last, dividend = self.dividend)
-			performance[t][oneYear] = (ret, years)
-
-			# Compute two year return
-			(ret, years) = portfolio.calculatePerformanceTimeWeighted(t, twoYear, last, dividend = self.dividend)
-			performance[t][twoYear] = (ret, years)
-
-			# Compute three year return
-			(ret, years) = portfolio.calculatePerformanceTimeWeighted(t, threeYear, last, dividend = self.dividend)
-			performance[t][threeYear] = (ret, years)
-
-			# Compute five year return
-			(ret, years) = portfolio.calculatePerformanceTimeWeighted(t, fiveYear, last, dividend = self.dividend)
-			performance[t][fiveYear] = (ret, years)
-
-			# Compute inception return
-			(ret, years) = portfolio.calculatePerformanceTimeWeighted(t, first, last, dividend = self.dividend)
-			performance[t][lastDay] = (ret, years)
-			
-			row += 1
-		
-		# Do benchmark if benchmark is not included AND we have a first portfolio date
-		if not portfolio.getBenchmark() in performance and portFirst:
-			t = portfolio.getBenchmark()
-			benchmark = Portfolio(t)
-			
-			if benchmark.portPrefs.getDirty():
-				benchmark.rebuildPositionHistory(stockData)
-			
-			firstLast = benchmark.getPositionFirstLast("__COMBINED__")
-			if firstLast:
-				(first, last) = firstLast
-	
-				# Check that the position is current
-				tickers.append(t)
-				performance[t] = {}
-				
-				# Compute YTD return
-				(ret, years) = benchmark.calculatePerformanceTimeWeighted("__COMBINED__", firstDayOfYear, last, dividend = self.dividend)
-				performance[t][firstDayOfYear] = (ret, years)
-				
-				# Compute year return
-				(ret, years) = benchmark.calculatePerformanceTimeWeighted("__COMBINED__", oneYear, last, dividend = self.dividend)
-				performance[t][oneYear] = (ret, years)
-	
-				# Compute two year return
-				(ret, years) = benchmark.calculatePerformanceTimeWeighted("__COMBINED__", twoYear, last, dividend = self.dividend)
-				performance[t][twoYear] = (ret, years)
-	
-				# Compute three year return
-				(ret, years) = benchmark.calculatePerformanceTimeWeighted("__COMBINED__", threeYear, last, dividend = self.dividend)
-				performance[t][threeYear] = (ret, years)
-	
-				# Compute five year return
-				(ret, years) = benchmark.calculatePerformanceTimeWeighted("__COMBINED__", fiveYear, last, dividend = self.dividend)
-				performance[t][fiveYear] = (ret, years)
-	
-				# Compute inception return
-				(ret, years) = benchmark.calculatePerformanceTimeWeighted("__COMBINED__", portFirst, last, dividend = self.dividend)
-				performance[t][lastDay] = (ret, years)
-
-		# Check active columns, always include last day
-		activeCols = {lastDay: True}
-		for t in performance:
-			for date in performance[t]:
-				(ret, yeras) = performance[t][date]
-				if ret != "n/a":
-					activeCols[date] = True
-		dates = sorted(activeCols.keys())
-
-		numCols = 1 + len(dates)
-
-		# Create columns
-		cols = ["Position"]
-		for date in dates:
-			self.setRedGreenColumn(len(cols))
-			if date == firstDayOfYear:
-				cols.append("YTD")
-			elif date == oneYear:
-				cols.append("One Year")
-			elif date == twoYear:
-				cols.append("Two Years")
-			elif date == threeYear:
-				cols.append("Three Years")
-			elif date == fiveYear:
-				cols.append("Five Years")
-			elif date == lastDay:
-				cols.append("Since Inception")
-		self.setColumns(cols)
-
-		tickers.sort()
-		
-		# Add returns
-		row = 0
-		for t in tickers:
-			name = stockData.getName(t)
-			#if name:
-			#	grid.getCtrl(row, 0).SetToolTipString(name)
-
-			data.append([])
-			rowMap[row] = row
-			data[row].append(t)
-
-			tooltips[row] = {}
-			col = 1
-			for date in dates:
-				if date in performance[t]:
-					ret = performance[t][date][0]
-					years = performance[t][date][1]
-					
-					color = False
-					tooltips[row][col] = ""
-					if ret != "n/a":
-						#if ret > "0":
-						#	color = self.app.positiveTextColor
-						#elif ret < "0":
-						#	color = self.app.negativeTextColor
-						tooltips[row][col] =  "From %d/%d/%d to %d/%d/%d (%.2f years)" % (first.month, first.day, first.year, date.month, date.day, date.year, years)
-						#grid.addText(ret, color, tooltip = tooltips[row][col])
-						data[row].append(ret)
-					else:
-						data[row].append("")
-				else:
-					data[row].append("no")
-				
-				col += 1
-			
-			row += 1
-		
-		self.setData(data)
+		#name = stockData.getName(t)
+		#if name:
+		#	grid.getCtrl(row, 0).SetToolTipString(name)
+		#tooltips[row][col] =  "From %d/%d/%d to %d/%d/%d (%.2f years)" % (first.month, first.day, first.year, date.month, date.day, date.year, years)
 
 class PerformanceWidget(QWidget):
 	def __init__(self, parent):
@@ -236,13 +70,24 @@ class PerformanceWidget(QWidget):
 		
 		portfolio = appGlobal.getApp().portfolio
 		
+		hor.addWidget(QLabel("Type:"))
+		self.chartType = QComboBox()
+		self.chartTypes = ["Value", "Profit", "Performance"]
+		self.chartType.addItems(self.chartTypes)
+		type = portfolio.portPrefs.getChartType()
+		if type in self.chartTypes:
+			self.chartType.setCurrentIndex(self.chartTypes.index(type))
+			self.model.type = type.lower()
+		hor.addWidget(self.chartType)
+		self.connect(self.chartType, SIGNAL("currentIndexChanged(int)"), self.changeType)
+
 		current = QCheckBox("Current Positions Only")
 		if portfolio.portPrefs.getPerformanceCurrent():
 			current.setChecked(True)
 			self.model.current = True
 		hor.addWidget(current)
 		
-		div = QCheckBox("Include Dividends")
+		div = QCheckBox("Dividends")
 		if portfolio.portPrefs.getPerformanceDividends():
 			div.setChecked(True)
 			self.model.dividend = True
@@ -262,6 +107,13 @@ class PerformanceWidget(QWidget):
 
 		vbox.addWidget(self.table)
 	
+	def changeType(self, event):
+		type = self.chartTypes[self.chartType.currentIndex()]
+		appGlobal.getApp().portfolio.portPrefs.setChartType(type)
+		self.model.type = type.lower()
+
+		self.model.rebuildPerformance()
+
 	def changeCurrent(self, state):
 		self.model.current = state != 0
 		appGlobal.getApp().portfolio.portPrefs.setPerformanceCurrent(self.model.current)
@@ -284,6 +136,9 @@ class Plugin(PluginBase):
 
 	def version(self):
 		return (1, 0, 0)
+	
+	def forBank(self):
+		return False
 
 	def createWidget(self, parent):
 		return PerformanceWidget(parent)

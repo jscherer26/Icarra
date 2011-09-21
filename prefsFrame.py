@@ -39,24 +39,40 @@ class PrefsFrame(QDialog):
 		
 		grid = QGridLayout(self)
 		
+		self.backgroundRebuild = QCheckBox("Rebuild portfolios in background")
+		if self.app.prefs.getBackgroundRebuild():
+			self.backgroundRebuild.setChecked(True)
+		grid.addWidget(self.backgroundRebuild, 0, 0, 1, 1)
+
+		self.backgroundImport = QCheckBox("Import transactions in background")
+		if self.app.prefs.getBackgroundImport():
+			self.backgroundImport.setChecked(True)
+		grid.addWidget(self.backgroundImport, 1, 0, 1, 1)
+
 		self.showCash = QCheckBox("Show cash total in Transactions")
 		if self.app.prefs.getShowCashInTransactions():
 			self.showCash.setChecked(True)
-		grid.addWidget(self.showCash, 0, 0, 1, 1)
+		grid.addWidget(self.showCash, 2, 0, 1, 1)
 
 		self.ofxDebug = QCheckBox("Enable OFX Debugging")
 		if self.app.prefs.getOfxDebug():
 			self.ofxDebug.setChecked(True)
-		grid.addWidget(self.ofxDebug, 1, 0, 1, 1)
+		grid.addWidget(self.ofxDebug, 3, 0, 1, 1)
 		
   		buttons = QDialogButtonBox(QDialogButtonBox.Cancel | QDialogButtonBox.Ok)
-  		grid.addWidget(buttons, 2, 0, 2, 1)
+  		grid.addWidget(buttons, 4, 0, 2, 1)
   		self.connect(buttons.button(QDialogButtonBox.Cancel), SIGNAL("clicked()"), SLOT("reject()"))
   		self.connect(buttons.button(QDialogButtonBox.Ok), SIGNAL("clicked()"), self.onOk)
 
 		self.exec_()
 
 	def onOk(self):
+		if self.backgroundRebuild.isChecked() != self.app.prefs.getBackgroundRebuild():
+			self.app.prefs.setBackgroundRebuild(self.backgroundRebuild.isChecked())
+
+		if self.backgroundImport.isChecked() != self.app.prefs.getBackgroundImport():
+			self.app.prefs.setBackgroundImport(self.backgroundImport.isChecked())
+
 		if self.ofxDebug.isChecked() != self.app.prefs.getOfxDebug():
 			self.app.prefs.setOfxDebug(self.ofxDebug.isChecked())
 

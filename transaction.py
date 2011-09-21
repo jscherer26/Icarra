@@ -56,7 +56,15 @@ class Transaction:
 	short = 13
 	cover = 14
 	tickerChange = 15
-	numTransactionTypes = 16
+	# Options
+	exercise = 16
+	assign = 17
+	buyToOpen = 18
+	sellToClose = 19
+	sellToOpen = 20
+	buyToClose = 21
+	expire = 22
+	numTransactionTypes = 23
 	
 	# Subtypes for dividend
 	ordinary = 1
@@ -64,14 +72,26 @@ class Transaction:
 	capitalGainShortTerm = 3
 	capitalGainLongTerm = 4
 	returnOfCapital = 5
+	taxExempt = 6
+	
+	# Subtypes for option
+	# Applies to buy, sell, short, buyToClose
+	optionPut = 1
+	optionCall = 2
 
-	def __init__(self, uniqueId, ticker, date, transactionType, amount = False, shares = False, pricePerShare = False, fee = False, edited = False, deleted = False, ticker2 = False, subType = False, auto = False):
-		self.uniqueId = uniqueId
+	def __init__(self, uniqueId, ticker, date, transactionType, amount = False, shares = False, pricePerShare = False, fee = False, edited = False, deleted = False, ticker2 = False, subType = False, optionStrike = False, optionExpire = False, auto = False):
+		# Icarra desktop app ids are in the form __N__ where N is unique (eg, __3__, __7__)
+		# Icarra ids that have been synched with the server are in the form __SN__ where N is a unique number (eg, __S3__, __S7__)
+		# Other ids may be supplied by the brokerage and are assumed to be unique
+		if type(uniqueId) != bool:
+			self.uniqueId = str(uniqueId)
+		else:
+			self.uniqueId = uniqueId
 		self.setTicker(ticker)
 		self.setTicker2(ticker2)
 		self.setAuto(auto)
 		if type(date) in [unicode, str]:
-			self.date = datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
+			self.date = Transaction.parseDate(date)
 		elif type(date) == datetime.datetime:
 			self.date = date
 		else:
@@ -91,17 +111,46 @@ class Transaction:
 			self.fee = float(fee)
 		else:
 			self.fee = False
-		if edited == "True":
+		
+		if optionStrike and optionStrike != "False":
+			self.optionStrike = float(optionStrike)
+		else:
+			self.optionStrike = False
+		
+		if optionExpire and optionExpire != "False":
+			if type(optionExpire) in [unicode, str]:
+				self.optionExpire = Transaction.parseDate(optionExpire)
+			elif type(optionExpire) == datetime.datetime:
+				self.optionExpire = optionExpire
+			else:
+				raise Exception("Transaction optionExpire must be datetime type, is " + str(type(optionExpire)))
+		else:
+			self.optionExpire = False
+		
+		if edited == "True" or (type(edited) == bool and edited):
 			self.edited = True
 		else:
 			self.edited = False
-		if deleted == "True":
+		if deleted == "True" or (type(deleted) == bool and deleted):
 			self.deleted = True
 		else:
 			self.deleted = False
 	
+	def __eq__(self, t2):
+		if self and not t2:
+			return False
+		def compField(a, b):
+			return a == b or (not a and not b) or (not a and b == "False") or (a == "False" and not b)
+		return compField(self.ticker, t2.ticker) and compField(self.date, t2.date) and compField(self.type, t2.type) and compField(self.total, t2.total) and compField(self.shares, t2.shares) and compField(self.pricePerShare, t2.pricePerShare) and compField(self.fee, t2.fee) and compField(self.ticker2, t2.ticker2) and compField(self.subType, t2.subType)
+	
+	def __ne__(self, t2):
+		return not self.__eq__(t2)
+	
 	def __str__(self):
-		str = self.formatDate() + " " + self.formatTicker() + " " + self.formatType()
+		str = ""
+		if self.uniqueId:
+			str += "id=" + self.uniqueId + " "
+		str += self.formatDate() + " " + self.formatTicker() + " " + self.formatType()
 		if self.ticker2:
 			str += " ticker2=" + self.formatTicker2()
 		if self.shares:
@@ -114,6 +163,8 @@ class Transaction:
 			str += " (edited)"
 		if self.deleted:
 			str += " (deleted)"
+		if self.auto:
+			str += " (auto)"
 		return str
 	
 	def __cmp__(self, other):
@@ -140,6 +191,10 @@ class Transaction:
 			return -1
 		
 		return 0
+	
+	def __hash__(self):
+		# Basic hash function by datetime (integer) and transaction type
+		return hash((self.date, self.type))
 	
 	def setDate(self, date):
 		self.date = date
@@ -174,7 +229,7 @@ class Transaction:
 			self.type = self.getType(type)
 	
 	def setSubType(self, subType):
-		self.subType = subType
+		self.subType = int(subType)
 
 	def setShares(self, shares):
 		self.shares = float(shares)
@@ -192,11 +247,20 @@ class Transaction:
 			self.total = False
 	
 	def setEdited(self):
-		self.edited = True
+		self.edited = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
 
 	def setDeleted(self, deleted = True):
-		self.edited = True
+		self.edited = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
 		self.deleted = deleted
+	
+	@staticmethod
+	def parseDate(date):
+		'Return a datetime object for a date in the form "%Y-%m-%d %H:%M:%S"'
+		try:
+			return datetime.datetime(int(date[0:4]), int(date[5:7]), int(date[8:10]),
+				int(date[11:13]), int(date[14:16]), int(date[17:19]))
+		except Exception, e:
+			return datetime.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
 
 	@staticmethod
 	def ofxDateToSql(date):
@@ -209,52 +273,84 @@ class Transaction:
 	
 	@staticmethod
 	def ameritradeDateToSql(date):
+		# MM-DD-YYYY (or with slashes)
 		return date[6:10] + "-" + date[:2] + "-" + date[3:5] + " 00:00:00"
 	
 	@staticmethod
+	def optionsHouseDateToSql(date):
+		# YYYY-MM-DD (or with slashes)
+		return date[0:4] + "-" + date[5:7] + "-" + date[8:10] + " 00:00:00"
+
+	@staticmethod
 	def forEdit():
-		list = [Transaction.deposit, Transaction.withdrawal, Transaction.buy, Transaction.sell, Transaction.split, Transaction.dividend, Transaction.dividendReinvest, Transaction.expense, Transaction.adjustment, Transaction.stockDividend, Transaction.spinoff, Transaction.tickerChange, Transaction.transferIn, Transaction.transferOut, Transaction.short, Transaction.cover]
+		list = [Transaction.deposit, Transaction.withdrawal, Transaction.buy, Transaction.sell, Transaction.short, Transaction.cover, Transaction.split, Transaction.dividend, Transaction.dividendReinvest, Transaction.expense, Transaction.adjustment, Transaction.stockDividend, Transaction.spinoff, Transaction.tickerChange, Transaction.transferIn, Transaction.transferOut, Transaction.buyToOpen, Transaction.sellToClose, Transaction.sellToOpen, Transaction.buyToClose, Transaction.exercise, Transaction.assign, Transaction.expire]
 		assert(len(list) == Transaction.numTransactionTypes)
 		return list
 	
 	@staticmethod
-	def fieldsForTransaction(type):
+	def forEditBank():
+		list = [Transaction.deposit, Transaction.withdrawal, Transaction.buy, Transaction.sell, Transaction.dividend, Transaction.dividendReinvest, Transaction.expense, Transaction.adjustment]
+		return list
+
+	@staticmethod
+	def fieldsForTransaction(type, subType = False):
 		if type == Transaction.deposit or type == Transaction.withdrawal:
 			return ["date", "fee", "total"]
 		elif type == Transaction.expense:
-			return ["date", "ticker", "fee"]
-		elif type in [Transaction.buy, Transaction.sell, Transaction.dividendReinvest, Transaction.transferIn, Transaction.transferOut]:
+			return ["date", "ticker", "fee", "-total"]
+		elif type in [Transaction.buy, Transaction.sell, Transaction.short]:
+			return ["date", "fee", "ticker", "shares", "pricePerShare"]
+		elif type == Transaction.cover:
+			return ["date", "fee", "ticker", "shares", "pricePerShare", "total"]
+		elif type in [Transaction.buyToOpen, Transaction.sellToClose, Transaction.sellToOpen, Transaction.buyToClose]:
+			return ["date", "fee", "ticker", "shares", "pricePerShare", "total", "strike", "expire"]
+		elif type in [Transaction.dividendReinvest, Transaction.transferIn, Transaction.transferOut]:
 			return ["date", "fee", "ticker", "shares", "pricePerShare"]
 		elif type == Transaction.split or type == Transaction.dividend:
 			return ["date", "fee", "ticker", "total"]
 		elif type == Transaction.adjustment:
 			return ["date", "ticker", "total"]
 		elif type == Transaction.stockDividend:
-			return ["date", "fee", "ticker", "shares"]
+			return ["date", "fee", "ticker", "shares", "-total"]
 		elif type == Transaction.spinoff:
-			return ["date", "fee", "ticker", "ticker2", "shares"]
+			return ["date", "fee", "ticker", "ticker2", "shares", "pricePerShare"]
 		elif type == Transaction.tickerChange:
-			return ["date", "fee", "ticker", "ticker2", "shares"]
+			return ["date", "fee", "ticker", "ticker2", "shares", "-total"]
+		elif type == Transaction.exercise or type == Transaction.assign:
+			return ["date", "fee", "ticker", "shares", "option", "-total"]
+		elif type == Transaction.expire:
+			return ["date", "fee", "ticker", "shares", "option"]
 		else:
 			return []
 
 	def formatTicker(self):
 		if self.ticker == "__CASH__":
-			return "Cash"
+			return "Cash Balance"
 		elif self.ticker2:
 			return self.ticker + " -> " + self.ticker2
+		elif self.isOption():
+			ret = self.ticker
+			ret += " " + self.optionExpire.strftime("%b-%y")
+			ret += " " + self.formatDollar(self.optionStrike)
+			if self.subType == Transaction.optionPut:
+				ret += " put"
+			elif self.subType == Transaction.optionCall:
+				ret += " call"
+			else:
+				ret += "???"
+			return ret
 		else:
 			return self.ticker
 	
 	def formatTicker1(self):
 		if self.ticker == "__CASH__":
-			return "Cash"
+			return "Cash Balance"
 		else:
 			return self.ticker
 
 	def formatTicker2(self):
 		if self.ticker2 == "__CASH__":
-			return "Cash"
+			return "Cash Balance"
 		else:
 			return self.ticker2
 
@@ -267,6 +363,72 @@ class Transaction:
 	def getDate(self):
 		return self.date
 	
+	# Return how much this transaction modifies the cash position
+	# Returns 0 if it does not change cash
+	def getCashMod(self):
+		if self.type in [Transaction.deposit, Transaction.dividend]:
+			return abs(self.total)
+		elif self.type in [Transaction.sell, Transaction.sellToClose, Transaction.sellToOpen, Transaction.short, Transaction.buyToClose, Transaction.cover]:
+			return self.getTotal()
+		elif self.type in [Transaction.withdrawal, Transaction.buy, Transaction.buyToOpen]:
+			return -abs(self.total)
+		elif self.type == Transaction.expense:
+			if self.total:
+				return -abs(self.total)
+			else:
+				return -abs(self.fee)
+		elif self.type == Transaction.adjustment and self.ticker == "__CASH__":
+			return self.total
+
+		return 0
+	
+	def getIrrFee(self, ticker):
+		'Returns the fee IRR for this transaction'
+		if self.ticker == "__CASH__":
+			if self.type == Transaction.dividend:
+				# Cash dividends increase value on their own, do not include here
+				val = 0
+			else:
+				val = self.getCashMod()
+			val += self.getFee()
+			return val
+		else:
+			# IRR for stocks
+			if self.type == Transaction.dividend:
+				# Include dividends
+				return -self.getTotal()
+			elif self.type == Transaction.spinoff:
+				# Spinoff is withdrawal if we are the original ticker
+				# Deposit if we are the spinoff ticker
+				if ticker == self.ticker:
+					return -self.getTotal()
+				else:
+					return self.getTotal()
+			elif self.type == Transaction.dividendReinvest:
+				# Do not include dividend reinvest since new shares are included in value
+				return self.getFee()
+			elif self.type == Transaction.transferIn:
+				return self.getTotal()
+			elif self.type == Transaction.transferOut:
+				return -self.getTotal()
+			elif self.type == Transaction.short:
+				if not self.pricePerShare or not self.shares:
+					return 0
+				return self.pricePerShare * self.shares + self.getFee()
+			else:
+				# Base IRR on cash mod
+				return -self.getCashMod()
+	
+	def getIrrDiv(self, ticker):
+		'Returns the dividend IRR for this transaction (getIrrFee ignoring fees)'
+		if self.ticker == "__CASH__":
+			return self.getIrrFee(ticker) - self.getFee()
+		else:
+			if self.type == Transaction.expense:
+				return 0
+			val = self.getIrrFee(ticker) - self.getFee()
+			return val
+
 	@staticmethod
 	def getTypeString(type):
 		if type == Transaction.deposit:
@@ -279,6 +441,10 @@ class Transaction:
 			return "Buy"
 		elif type == Transaction.sell:
 			return "Sell"
+		elif type == Transaction.short:
+			return "Short"
+		elif type == Transaction.cover:
+			return "Cover"
 		elif type == Transaction.split:
 			return "Split"
 		elif type == Transaction.dividend:
@@ -297,10 +463,20 @@ class Transaction:
 			return "Transfer In"
 		elif type == Transaction.transferOut:
 			return "Transfer Out"
-		elif type == Transaction.short:
-			return "Short"
-		elif type == Transaction.cover:
-			return "Cover"
+		elif type == Transaction.buyToOpen:
+			return "Options: Buy to Open"
+		elif type == Transaction.sellToClose:
+			return "Options: Sell to Close"
+		elif type == Transaction.sellToOpen:
+			return "Options: Sell to Open"
+		elif type == Transaction.buyToClose:
+			return "Options: Buy to Close"
+		elif type == Transaction.exercise:
+			return "Options: Exercised"
+		elif type == Transaction.assign:
+			return "Options: Assigned"
+		elif type == Transaction.expire:
+			return "Options: Expired"
 		else:
 			return "???"
 	
@@ -316,6 +492,10 @@ class Transaction:
 			return Transaction.buy
 		elif string == "Sell":
 			return Transaction.sell
+		elif string == "Short":
+			return Transaction.short
+		elif string == "Cover":
+			return Transaction.cover
 		elif string == "Split":
 			return Transaction.split
 		elif string == "Dividend":
@@ -334,6 +514,20 @@ class Transaction:
 			return Transaction.transferIn
 		elif string == "Transfer Out":
 			return Transaction.transferOut
+		elif string == "Options: Buy to Open":
+			return Transaction.buyToOpen
+		elif string == "Options: Sell to Close":
+			return Transaction.sellToClose
+		elif string == "Options: Sell to Open":
+			return Transaction.sellToOpen
+		elif string == "Options: Buy to Close":
+			return Transaction.buyToClose
+		elif string == "Options: Exercised":
+			return Transaction.exercise
+		elif string == "Options: Assigned":
+			return Transaction.assign
+		elif string == "Options: Expired":
+			return Transaction.expire
 		else:
 			return False
 	
@@ -341,11 +535,11 @@ class Transaction:
 	def getTransactionOrdering(type):
 		if type in [Transaction.deposit, Transaction.transferIn]:
 			return 0
-		elif type in [Transaction.buy, Transaction.dividendReinvest]:
+		elif type in [Transaction.buy, Transaction.short, Transaction.dividendReinvest, Transaction.buyToOpen, Transaction.sellToOpen]:
 			return 1
 		elif type in [Transaction.split, Transaction.dividend, Transaction.spinoff, Transaction.tickerChange]:
 			return 2
-		elif type in [Transaction.sell]:
+		elif type in [Transaction.sell, Transaction.cover, Transaction.buyToClose, Transaction.sellToClose]:
 			return 99
 		elif type in [Transaction.withdrawal, Transaction.transferOut]:
 			return 100
@@ -359,7 +553,19 @@ class Transaction:
 		return self.type in [Transaction.buy, Transaction.sell, Transaction.dividendReinvest]
 	
 	def formatType(self):
-		return self.getTypeString(self.type)
+		# Check for options
+		if self.isOption():
+			return self.getTypeString(self.type).replace("Options: ", "")
+		elif self.type == Transaction.dividend:
+			if self.subType == Transaction.returnOfCapital:
+				return "Return of Capital"
+			elif self.subType == Transaction.capitalGainShortTerm:
+				return "Short Term Capital Gain"
+			elif self.subType == Transaction.capitalGainLongTerm:
+				return "Long Term Capital Gain"
+			return self.getTypeString(self.type)
+		else:
+			return self.getTypeString(self.type)
 	
 	def formatShares(self):
 		return self.formatFloat(abs(self.shares))
@@ -370,7 +576,7 @@ class Transaction:
 		Format a floating point value without any trailing 0s in the decimal portion
 		'''
 		if value == 0.0:
-			return "0.0"
+			return "0"
 		if value == False:
 			return ""
 		
@@ -396,26 +602,82 @@ class Transaction:
 		Format a floating point value as a dollar value
 		'''
 
-		return "$" + locale.format("%.2f", value, True)
+		return "$" + Transaction.formatFloat(value, commas = True)
 
 	def formatPricePerShare(self):
 		if not self.pricePerShare or self.pricePerShare == "False":
 			return ""
 		return self.formatDollar(self.pricePerShare)
+	
+	def getShares(self):
+		if self.shares:
+			return abs(self.shares)
+		else:
+			return 0
+	
+	def getFee(self):
+		if self.type == Transaction.expense:
+			if self.total:
+				return abs(self.total)
+			else:
+				return abs(self.fee)
+		elif self.fee:
+			return abs(self.fee)
+		else:
+			return 0
 
 	def formatFee(self):
 		if not self.fee or self.fee == "False":
 			return ""
 		return "$" + str(self.fee)
+	
+	def getTotal(self):
+		if not self.total:
+			return 0
+		
+		# Compute for buys/sells
+		if self.type in [Transaction.buy, Transaction.transferIn]:
+			if self.pricePerShare and self.shares:
+				return -abs(self.pricePerShare * self.shares) - self.getFee()
+			return -abs(self.total)
+		elif self.type in [Transaction.sell, Transaction.transferOut]:
+			if self.pricePerShare and self.shares:
+				return abs(self.pricePerShare * self.shares) - self.getFee()
+			return abs(self.total)
+		elif self.type in [Transaction.deposit, Transaction.dividend]:
+			return abs(self.total)
+		elif self.type in [Transaction.withdrawal]:
+			return -abs(self.total)
+		
+		return self.total
+
+	def getTotalIgnoreFee(self):
+		return self.getTotal() + self.getFee()
 
 	def formatTotal(self):
 		if not self.total:
 			return ""
-		if self.type in [Transaction.split]:
+		elif self.type in [Transaction.split]:
 			return self.splitValueToString(self.total)
+		elif self.type in [Transaction.sell, Transaction.deposit, Transaction.dividend]:
+			# Always positive
+			return self.formatDollar(abs(self.total))
+		elif self.type in [Transaction.buy, Transaction.withdrawal, Transaction.expense]:
+			# Always negative
+			return self.formatDollar(-abs(self.total))
 		else:
 			return self.formatDollar(self.total)
 	
+	def formatStrike(self):
+		if not self.optionStrike or self.optionStrike == "False":
+			return ""
+		return self.formatDollar(self.optionStrike)
+
+	def formatExpire(self):
+		if not self.optionExpire or self.optionExpire == "False":
+			return ""
+		return "%d/%d/%d" % (self.optionExpire.month, self.optionExpire.day, self.optionExpire.year)
+
 	@staticmethod
 	def splitValueToString(value):
 		# Determine split value
@@ -444,8 +706,14 @@ class Transaction:
 
 		return splitVal
 	
-	def save(self, db):
-		data = {
+	def isOption(self):
+		return self.type in [Transaction.buyToOpen, Transaction.sellToClose, Transaction.sellToOpen, Transaction.buyToClose, Transaction.assign, Transaction.exercise, Transaction.expire]
+	
+	def isBankSpending(self):
+		return self.type == Transaction.withdrawal and self.ticker != "__CASH__"
+	
+	def getSaveData(self):
+		return {
 			"uniqueId": self.uniqueId,
 			"ticker": self.ticker,
 			"ticker2": self.ticker2,
@@ -456,10 +724,15 @@ class Transaction:
 			"pricePerShare": self.pricePerShare,
 			"fee": self.fee,
 			"total": self.total,
+			"optionStrike": self.optionStrike,
+			"optionExpire": self.optionExpire,
 			"edited": self.edited,
 			"deleted": self.deleted,
 			"auto": self.auto
-		};
+		}
+	
+	def save(self, db):
+		data = self.getSaveData()
 
 		# If uniqueId is supplied make it the criteria for update
 		# Otherwise use the entire transaction

@@ -29,8 +29,14 @@ from editGrid import *
 from plugin import *
 
 import appGlobal
-import chartWidget
+import chart
 import tutorial
+
+try:
+	import keyring
+	haveKeyring = True
+except:
+	haveKeyring = False
 
 class Plugin(PluginBase):
 	def name(self):
@@ -70,11 +76,23 @@ class TestImport(QDialog):
 		self.password = QLineEdit()
 		self.password.setEchoMode(QLineEdit.Password)
 		hbox.addWidget(self.password)
+		
+		# Check for keying, try to load password
+		if haveKeyring:
+			self.savePassword = QCheckBox("Save Password")
+			hbox2 = QHBoxLayout()
+			hbox2.addSpacing(20)
+			layout.addLayout(hbox2)
+			hbox2.addWidget(self.savePassword)
+			layout.addSpacing(10)
 
+			password = keyring.get_password("Icarra-ofx-" + self.app.portfolio.name, self.app.portfolio.username)
+			if password:
+				self.password.setText(password)
+				self.savePassword.setChecked(True)
+		
 		self.password.setFocus()
-			
-		layout.addWidget(QLabel("(Not saved for your safety)"))
-
+		
 		buttons = QHBoxLayout()
 		layout.addLayout(buttons)
 
@@ -145,6 +163,12 @@ class TestImport(QDialog):
 			else:
 				portfolio.updateFromFile(ofx, self.app, status)
 				self.didImport = True
+
+				if haveKeyring:
+					if self.savePassword.isChecked():
+						keyring.set_password("Icarra-ofx-" + portfolio.name, username, password)
+					else:
+						keyring.set_password("Icarra-ofx-" + portfolio.name, username, "")
 		except Exception, e:
 			import traceback
 			status.addError('Could not get transactions: %s' % traceback.format_exc())
@@ -309,25 +333,36 @@ class PortfolioSettingsWidget(QWidget):
 
 		grid3.addWidget(QLabel("<b>Summary Chart 1</b>"), 1, 0)
 		self.summary1 = QComboBox()
-		chartTypesList = [v for k,v in chartWidget.getSummaryChartTypes().items()]
-		self.summary1.addItems(chartTypesList)
-		self.summary1.setCurrentIndex(portfolio.getSummaryChart1() - 1)
+		self.chartTypesList = [v for k,v in chart.getSummaryChartTypes(portfolio).items()]
+		try:
+			index = self.chartTypesList.index(chart.getSummaryChartTypes(portfolio)[portfolio.getSummaryChart1()])
+		except:
+			index = 0
+		self.summary1.addItems(self.chartTypesList)
+		self.summary1.setCurrentIndex(index)
 		self.connect(self.summary1, SIGNAL("currentIndexChanged(int)"), self.newSummary1)
 		grid3.addWidget(self.summary1, 1, 1)
 
 		grid3.addWidget(QLabel("<b>Summary Chart 2</b>"), 2, 0)
+		try:
+			index = self.chartTypesList.index(chart.getSummaryChartTypes(portfolio)[portfolio.getSummaryChart2()])
+		except:
+			index = 0
 		self.summary2 = QComboBox()
-		self.summary2.addItems(chartTypesList)
-		self.summary2.setCurrentIndex(portfolio.getSummaryChart2() - 1)
+		self.summary2.addItems(self.chartTypesList)
+		self.summary2.setCurrentIndex(index)
 		self.connect(self.summary2, SIGNAL("currentIndexChanged(int)"), self.newSummary2)
 		grid3.addWidget(self.summary2, 2, 1)
 
 		if portfolio.name != "S&P 500":
+			self.hasDelete = True
 			self.deleteButton = QPushButton("Delete Portfolio")
 			self.deleteButton.setSizePolicy(QSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed))
 			self.connect(self.deleteButton, SIGNAL("clicked()"), self.delete)
 			grid.addWidget(self.deleteButton, row, 0, 1, 2)
 			row += 1
+		else:
+			self.hasDelete = False
 		
 		self.twiddleAdvanced()
 
@@ -341,10 +376,12 @@ class PortfolioSettingsWidget(QWidget):
 	
 	def twiddleAdvanced(self):
 		if self.advancedOptions.isChecked():
-			self.deleteButton.show()
+			if self.hasDelete:
+				self.deleteButton.show()
 			self.summaryFrame.show()
 		else:
-			self.deleteButton.hide()
+			if self.hasDelete:
+				self.deleteButton.hide()
 			self.summaryFrame.hide()
 	
 	def checkTutorial(self):
@@ -413,11 +450,17 @@ class PortfolioSettingsWidget(QWidget):
 		self.app.portfolio.readFromDb()
 	
 	def newSummary1(self):
-		type = self.summary1.currentIndex() + 1
+		types = chart.getSummaryChartTypes(self.app.portfolio)
+		revTypes = dict((v,k) for k, v in types.iteritems())
+		typeName = self.chartTypesList[self.summary1.currentIndex()]
+		type = revTypes[typeName]
 		self.app.portfolio.setSummaryChart1(type)
 
 	def newSummary2(self):
-		type = self.summary2.currentIndex() + 1
+		types = chart.getSummaryChartTypes(self.app.portfolio)
+		revTypes = dict((v,k) for k, v in types.iteritems())
+		typeName = self.chartTypesList[self.summary2.currentIndex()]
+		type = revTypes[typeName]
 		self.app.portfolio.setSummaryChart2(type)
 
 	def newBrokerageInfo(self, ignore = None):

@@ -30,17 +30,19 @@ import os
 
 import appGlobal
 
-intro = 0x00000001
-settings = 0x00000002
-settingsCombined = 0x00000004
+intro =             0x00000001
+settings =          0x00000002
+settingsCombined =  0x00000004
 settingsBenchmark = 0x00000008
-transactions = 0x00000010
+transactions =      0x00000010
+sync =              0x00000020
 text = {}
 text[intro] = "<p><b>Welcome to Icarra!</b></p><p>We have created a Sample Portfolio for you to explore.  It contains the two US stocks with the largest market capitalization: Exxon-Mobil and Apple.</p><p>Have a look around.  You can create a portfolio by navigating to the \"Portfolio\" menu and selecting \"New Portfolio\".  Your first portfolio should be an Investment portfolio.</p>"
 text[settings] = "<p><b>New Portfolio</b></p><p>You have just created your first Icarra portfolio.</p><p>In the \"Settings\" tool you may configure your new portfolio.  Configuring the brokerage section will allow you to import transactions directly from your financial institution.</p><p>When you are done editing your portfolio's settings you can use the Transactions tool to import or add transactions.</p>"
 text[transactions] = "<p><b>Transactions</b></p><p>In the transactions tool you may import, create, edit and delete transactions.</p><p>Importing transactions is the best way to add transactions to your portfolio.  Icarra will download transactions directly from your brokerage.  Please visit the Icarra forums if you are having trouble importing transactions.</p><p>You may also create and edit new transactions by hand.  This is necessary if your brokerage omits a transaction or provides incorrect data.  We suggest, however, that you import from your brokerage whenever possible.</p>"
 text[settingsCombined] = "<p><b>Combined Portfolio</b></p><p>A Combined Portfolio is composed of one or more Investment portfolios.  You may choose which Investment portfolios to include in this combined portfolio by checking their name in the \"Settings\" tool in the components section.  You cannot directly edit its transactions.</p><p>A Combined portfolio behaves just like a regular Investment portfolio.</p>"
 text[settingsBenchmark] = "<p><b>Benchmark Portfolio</b></p><p>Benchmark portfolios can be used for performance comparisons.  You may define the benchmark's components in the \"Allocation\" tool.  Click the \"Add Position\" button, set the ticker and choose the target holding percentage.  Continue until the total reaches 100%.</p>"
+text[sync] = "<p><b>Sync</b></p><p>The sync tool will automatically synchronize your portfolio's transactions with online finance sites such as the Icarrab web app, Yahoo finance, Google finance and morningstar.</p><p>Transactions may be sycnhronized automatically by checking the \"Auto Sync\" button.</p>"
 
 class Tutorial(QDialog):
 	def __init__(self, tutorial):
