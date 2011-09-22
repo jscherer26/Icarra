@@ -353,6 +353,8 @@ class Icarra2(QApplication):
 		# Nothing else if regression
 		if "--regression" in args[0] or "--broker-info" in args[0] or "--rebuild" in args[0] or "--import" in args[0]:
 			return
+	
+		self.plugins = PluginManager()
 		
 		timesRun = prefs.getTimesRun()
 		splashTime = datetime.datetime.now()
@@ -383,8 +385,6 @@ class Icarra2(QApplication):
 
 		self.main = MainWindow()
 		self.processEvents()
-	
-		self.plugins = PluginManager()
 
 		self.main.render()
 		self.processEvents()
