@@ -85,6 +85,7 @@ from stockData import *
 from statusUpdate import *
 from pluginManager import *
 from helpFrame import *
+from aboutDialog import *
 from splashScreenFrame import *
 from newPortfolioFrame import *
 from newVersionFrame import *
@@ -308,7 +309,7 @@ class MainWindow(QMainWindow):
 		self.exit()
 	
 	def about(self):
-		about = QMessageBox.about(self, "About Icarra2", "Icarra version %d.%d.%d\nPyQT version %s\n\nby Jesse Liesch\n\nContributors\nJames G Scherer" % (appGlobal.gMajorVersion, appGlobal.gMinorVersion, appGlobal.gRelease, PYQT_VERSION_STR))
+		about = AboutDialog(self)
 	
 	def help(self):
 		help = HelpFrame()
