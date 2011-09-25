@@ -65,6 +65,7 @@ class Plugin(PluginBase):
 		if d.didImport:
 			portfolio.readFromDb()
 			if appGlobal.getApp().tool.name() == "Transactions":
+				appGlobal.getApp().toolWidget.rebuildPositions()
 				appGlobal.getApp().toolWidget.model.setTransactions()
 				appGlobal.getApp().toolWidget.table.resizeColumnsToContents()
 
@@ -81,12 +82,27 @@ class WebImport(QDialog):
 		vert.addWidget(QLabel("Download transaction history from your bank or brokerage website"))
 
 		self.webView = WebBrowser(self, downloadImport = True)
+		self.webView.changeUrlCallback = self.newUrl
 		self.webView.setSizePolicy(QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding))
 		vert.addWidget(self.webView)
+		
+		# Check if user has saved a url
+		url = appGlobal.getApp().portfolio.portPrefs.getUrl()
+		if url:
+			self.webView.locationEdit.setText(url)
+			self.webView.changeLocation()
 		
 		self.setStyleSheet("QLabel { padding: 5px }")
 		
 		self.exec_()
+	
+	def showEvent(self, showEvent):
+		self.webView.locationEdit.setFocus()
+	
+	@staticmethod
+	def newUrl(url):
+		# User entered a new url, save
+		appGlobal.getApp().portfolio.portPrefs.setUrl(url)
 
 class AccountSelector(QDialog):
 	def __init__(self, parent, choices):
@@ -823,19 +839,7 @@ class TransactionWidget(QWidget):
 		hor.addWidget(self.positionLabel)
 		
 		self.tickerBox = QComboBox()
-		self.tickers = appGlobal.getApp().portfolio.getTickers()
-		if "__CASH__" in self.tickers:
-			self.tickers.pop(self.tickers.index("__CASH__"))
-			self.tickers.insert(0, "Cash Balance")
-		self.tickers.insert(0, "All Positions")
-		self.tickerBox.addItems(self.tickers)
-		lastTicker = appGlobal.getApp().portfolio.getLastTicker()
-		if lastTicker == False:
-			self.tickerBox.setCurrentIndex(0)
-		elif lastTicker == "__CASH__":
-			self.tickerBox.setCurrentIndex(1)
-		elif lastTicker in self.tickers:
-			self.tickerBox.setCurrentIndex(self.tickers.index(lastTicker))
+		self.rebuildPositions()
 		self.tickerBox.setMaximumWidth(150)
 		hor.addWidget(self.tickerBox)
 
@@ -873,8 +877,6 @@ class TransactionWidget(QWidget):
 		elif portfolio.isCombined():
 			vbox.addWidget(QLabel("Note: Combined components may be changed in the Settings tool"))
 
-		self.connect(self.tickerBox, SIGNAL("currentIndexChanged(int)"), self.newTicker)
-
 		hor.addStretch(1000)
 
 		self.table = EditGrid(self.model, sorting = True)
@@ -892,6 +894,29 @@ class TransactionWidget(QWidget):
 			self.tutorialTimer.setSingleShot(True)
 			self.connect(self.tutorialTimer, SIGNAL("timeout()"), self.checkTutorial)
 			self.tutorialTimer.start()
+	
+	def rebuildPositions(self):
+		# Temporarily unsubscribe while we change the ticker box
+		self.disconnect(self.tickerBox, SIGNAL("currentIndexChanged(int)"), self.newTicker)
+		self.tickerBox.clear()
+		
+		app = appGlobal.getApp()
+		self.tickers = app.portfolio.getTickers()
+		lastTicker = app.portfolio.getLastTicker()
+		if "__CASH__" in self.tickers:
+			self.tickers.pop(self.tickers.index("__CASH__"))
+			self.tickers.insert(0, "Cash Balance")
+		self.tickers.insert(0, "All Positions")
+		self.tickerBox.addItems(self.tickers)
+		if lastTicker == False:
+			self.tickerBox.setCurrentIndex(0)
+		elif lastTicker == "__CASH__":
+			self.tickerBox.setCurrentIndex(1)
+		elif lastTicker in self.tickers:
+			self.tickerBox.setCurrentIndex(self.tickers.index(lastTicker))
+		
+		# Changing the combo box may change the last ticker, set it back
+		self.connect(self.tickerBox, SIGNAL("currentIndexChanged(int)"), self.newTicker)
 	
 	def checkTutorial(self):
 		tutorial.check(tutorial.transactions)

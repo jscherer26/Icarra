@@ -38,6 +38,7 @@ except:
 	haveAutoUpdater = False
 import chart
 
+import time
 import datetime
 import os
 import copy
@@ -117,6 +118,9 @@ class PortfolioPrefs(prefs.Prefs):
 	def getBrokerage(self):
 		return self.getPreference("brokerage")
 
+	def getUrl(self):
+		return self.getPreference("url")
+
 	def getSync(self):
 		if not self.getPreference("sync"):
 			return []
@@ -182,6 +186,11 @@ class PortfolioPrefs(prefs.Prefs):
 		self.db.update("prefs", {"value": value}, {"name": "brokerage"})
 		self.db.commitTransaction()
 
+	def setUrl(self, value):
+		self.db.beginTransaction()
+		self.db.update("prefs", {"value": value}, {"name": "url"})
+		self.db.commitTransaction()
+
 	def setSync(self, value):
 		self.db.beginTransaction()
 		self.db.update("prefs", {"value": value}, {"name": "sync"})
@@ -217,6 +226,7 @@ class Portfolio:
 		self.portPrefs.checkDefaults("isBank", "False")
 		self.portPrefs.checkDefaults("isBenchmark", "False")
 		self.portPrefs.checkDefaults("isCombined", "False")
+		self.portPrefs.checkDefaults("url", "")
 		self.portPrefs.checkDefaults("summaryYears", "lastYear")
 		self.portPrefs.checkDefaults("summaryChart1", chart.oneYearVsBenchmarkCash)
 		if self.isBank():
