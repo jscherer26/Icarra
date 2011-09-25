@@ -46,6 +46,7 @@ class AutoUpdater(threading.Thread):
 		self.stockData = stockData
 		self.prefs = prefs
 		self.running = True
+		self.finished = False
 		self.sleeping = False
 		self.rebuilding = False # rebuilding portfolios
 		self.tickerCount = 0
@@ -258,7 +259,9 @@ class AutoUpdater(threading.Thread):
 				self.tickerCount = 0
 				self.tickersToImport = 1
 				self.sleepCond.release()
-	
+
+		self.finished = True
+		
 	def stop(self):
 		self.running = False
 		self.wakeUp()
@@ -294,11 +297,12 @@ def start(stockData, prefs):
 		updater = a
 		a.start()
 
-def stop():
+def stop(join = True):
 	global updater
 	if updater:
 		updater.stop()
-		updater.join()
+		if join:
+			updater.join()
 
 def wakeUp(freshStart = False):
 	global updater
@@ -316,6 +320,13 @@ def rebuilding():
 	global updater
 	if updater:
 		return updater.rebuilding
+	else:
+		return False
+
+def finished():
+	global updater
+	if updater:
+		return updater.finished
 	else:
 		return False
 

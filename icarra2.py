@@ -282,15 +282,33 @@ class MainWindow(QMainWindow):
 			prefs.setSize(w, h)
 
 	def exit(self):
-		autoUpdater.stop()
+		# Stop downloading data, rebuilding portfolios
+		# There may be a small delay while the current task completes
+		autoUpdater.stop(join = False)
+		
+		# Wait for background task to complete (if any)
+		app = appGlobal.getApp()
+		task = app.getBigTask()
+		if task:
+			startWait = datetime.datetime.now()
+			status = StatusUpdate(self, closeOnFinish = True)
+			status.setStatus("Waiting while we finish " + task + "...", 10)
+			status.appYield()
+			while task or not autoUpdater.finished():
+				time.sleep(1)
+				seconds = (datetime.datetime.now() - startWait).seconds
+				status.setStatus(level = 100 - 90 / math.sqrt(seconds))
+				status.appYield()
+				task = app.getBigTask()
+			status.setFinished()
+		
 		QCoreApplication.exit()
 
 	def closeEvent(self, event):
-		autoUpdater.stop()
-		QCoreApplication.exit()
+		self.exit()
 	
 	def about(self):
-		about = QMessageBox.about(self, "About Icarra2", "Icarra version %d.%d.%d\n\nPyQT version %s\n\nby Jesse Liesch" % (appGlobal.gMajorVersion, appGlobal.gMinorVersion, appGlobal.gRelease, PYQT_VERSION_STR))
+		about = QMessageBox.about(self, "About Icarra2", "Icarra version %d.%d.%d\nPyQT version %s\n\nby Jesse Liesch\n\nContributors\nJames G Scherer" % (appGlobal.gMajorVersion, appGlobal.gMinorVersion, appGlobal.gRelease, PYQT_VERSION_STR))
 	
 	def help(self):
 		help = HelpFrame()
@@ -510,6 +528,13 @@ class Icarra2(QApplication):
 		self.bigTask = False
 		self.bigTaskCondition.notify()
 		self.bigTaskCondition.release()
+
+	def getBigTask(self):
+		'''Return the current big task, or False if no big task'''
+		self.bigTaskCondition.acquire()
+		task = self.bigTask
+		self.bigTaskCondition.release()
+		return task
 
 	def loadPortfolio(self, name):
 		global prefs
