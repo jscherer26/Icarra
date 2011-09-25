@@ -32,6 +32,9 @@ from statusUpdate import *
 class WebBrowser(QWidget):
 	def __init__(self, parent = False, downloadImport = False):
 		QWidget.__init__(self, parent)
+		
+		# Callback when the user enters a new URL in the toolbar
+		self.changeUrlCallback = False
 
 		layout = QVBoxLayout(self)
 		layout.setMargin(0)
@@ -97,9 +100,13 @@ class WebBrowser(QWidget):
 
  	def changeLocation(self):
  		urlText = str(self.locationEdit.text())
- 		if urlText.find("http://") == -1 and urlText.find("https://") == -1:
+ 		if urlText and urlText.find("http://") == -1 and urlText.find("https://") == -1:
  			urlText = "http://" + urlText
  			self.locationEdit.setText(urlText)
+ 		
+ 		if self.changeUrlCallback:
+ 			self.changeUrlCallback(urlText)
+ 		
 		url = QUrl(urlText)
 		self.webView.load(url)
 		self.webView.setFocus()
