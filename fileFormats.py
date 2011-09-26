@@ -420,6 +420,10 @@ class Ofx(FileFormat):
 				shares = False
 				if t.hasKey("units"):
 					shares = float(t["units"])
+					
+				# Set ticker if one is available
+				if t.hasKey("uniqueid") and t["uniqueid"] in ids:
+					t["ticker"] = ids[t["uniqueid"]]
 				
 				# Try pre-parsing the transaction 
 				if brokerage:
@@ -534,9 +538,7 @@ class Ofx(FileFormat):
 							amount)
 				elif t.hasKey("uniqueid"):
 					# Make sure we have info
-					if t["uniqueid"] in ids:
-						t["ticker"] = ids[t["uniqueid"]]
-					else:
+					if "ticker" not in t:
 						if status:
 							status.addError("No stock info found for %s" % t["uniqueid"])
 						continue
@@ -702,6 +704,8 @@ class Ofx(FileFormat):
 					if trans.ticker2:
 						transactionTickers[trans.ticker2] = True
 			except Exception:
+				if status:
+					status.addException()
 				transactionErrors.append(t)
 
 		# Update userPrices
