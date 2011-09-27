@@ -42,7 +42,7 @@ class AboutDialog(QDialog):
 			frame.setFrameShape(QFrame.Box)
 			frame.setLineWidth(1)
 			#frame.setFixedSize(400, height)
-			frame.setFixedWidth(400, 260)
+			frame.setFixedSize(400, 260)
 			
 			self.sizer = QVBoxLayout(frame)
 		else:

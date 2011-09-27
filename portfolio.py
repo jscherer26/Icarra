@@ -1281,7 +1281,7 @@ class Portfolio:
 
 	def rebuildBankPositionHistory(self, update = False):
 		# Only allow one thread to update a portfolio at a time
-		appGlobal.getApp().beginBigTask('rebuilding a portfolio', update)
+		appGlobal.getApp().beginBigTask('rebuilding ' + self.name, update)
 		
 		self.db.beginTransaction()
 		try:
