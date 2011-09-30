@@ -4,9 +4,10 @@ def calcValue(dates, inflows, thisRate):
 		val = 0
 		# val = sum(i) inflow[i] * thisRate ^ days[i]
 		for i in xrange(len(dates)):
-			val += inflows[i] * pow(thisRate, maxDate - dates[i])
+			days = (maxDate - dates[i]).days
+			val += inflows[i] * pow(thisRate, days)
 		return val
-	except:
+	except Exception, e:
 		# Possible over/under flow
 		return 0
 

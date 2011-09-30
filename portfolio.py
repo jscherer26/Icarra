@@ -29,6 +29,7 @@ from fileFormats import *
 from userprice import *
 from positionCheck import *
 from twrr import *
+import irr
 
 import prefs
 try:
@@ -963,6 +964,94 @@ class Portfolio:
 		#print ticker, ret, val1, val2, years, days, first, last
 		return (ret, years)
 	
+	# Returns (performance string, years)
+	def calculatePerformanceIRR(self, ticker, first, last, divide = True, dividend = True, format = True, isInception = False):
+		if ticker == "__CASH__":
+			raise Exception("Cannot calculate IRR for cash")
+		if last < first:
+			return ("n/a", 0)
+		
+		# Next normalize
+		diff = last - first
+		days = diff.days
+		years = (days + 1) / 365.25
+		if days == 0:
+			return ("n/a", years)
+
+		# Computer starting and ending values
+		val1 = self.getPositionOnDate(ticker, first)
+		val2 = self.getPositionOnDate(ticker, last)
+		if not val1 or not val2:
+			return ("n/a", years)
+		val1 = val1["value"]
+		val2 = val2["value"]
+		if abs(val1) < 1.0e-6:
+			return ("n/a", years)
+		
+		# Build dates and inflows
+		dates = []
+		inflows = []
+		
+		if not isInception:
+			dates.append(first)
+			inflows.append(val1)
+
+		#if ticker == "PM":
+		#	print
+		#	print ticker, first, last
+		#	for i in range(len(dates)):
+		#		print dates[i], inflows[i]
+
+		# Get transactions
+		if ticker == "__COMBINED__" or ticker == "__BENCHMARK__":
+			thisTicker = False
+		else:
+			thisTicker = ticker
+		transactions = self.getTransactions(thisTicker, ascending = True, buysToCash = False)
+		
+		for t in transactions:
+			if t.getDate() < first:
+				continue
+
+			if ticker == "__COMBINED__" or ticker == "__BENCHMARK__":
+				if t.type in [Transaction.deposit, Transaction.transferIn]:
+					dates.append(t.getDate())
+					inflows.append(abs(t.getTotal()))
+				elif t.type in [Transaction.withdrawal, Transaction.transferOut]:
+					dates.append(t.getDate())
+					inflows.append(-abs(t.getTotal()))
+			else:
+				if t.type in [Transaction.buy, Transaction.transferIn]:
+					dates.append(t.getDate())
+					inflows.append(abs(t.getTotal()))
+				elif t.type in [Transaction.sell, Transaction.transferOut, Transaction.dividend]:
+					dates.append(t.getDate())
+					inflows.append(-abs(t.getTotal()))
+				elif t.type == Transaction.spinoff:
+					dates.append(t.getDate())
+					if t.ticker == ticker:
+						inflows.append(-abs(t.getTotal()))
+					else:
+						inflows.append(abs(t.getTotal()))
+		
+		# Add current value (if any)
+		dates.append(last)
+		inflows.append(-val2)
+
+		ret = irr.irrBinary(dates, inflows)
+		if days > 365:
+			ret = pow(ret, 365)
+		else:
+			ret = pow(ret, days)
+
+		if ret == 0:
+			return ("n/a", years)
+		if format:
+			ret = "%.2f%%" % (100.0 * ret - 100.0)
+		
+		#print ticker, ret, val1, val2, years, days, first, last
+		return (ret, years)
+		
 	# Returns (performance string, years)
 	def calculatePerformanceProfit(self, ticker, first, last, divide = True, dividend = True, format = True, isInception = False):
 		if last < first:
@@ -3270,6 +3359,9 @@ class Portfolio:
 				performanceFunc = self.calculatePerformanceProfit
 			elif type == "value":
 				performanceFunc = self.calculatePerformanceValue
+			elif type == "internal rate of return (irr)" and t != "__CASH__":
+				# Use time weighted returns for cash
+				performanceFunc = self.calculatePerformanceIRR
 			else:
 				performanceFunc = self.calculatePerformanceTimeWeighted
 			
@@ -3322,7 +3414,7 @@ class Portfolio:
 			elif date == fiveYear:
 				cols.append("Five Years")
 			elif date == lastDay:
-				cols.append("Since Inception")
+				cols.append("Since Inception (zz)")
 
 		tickers.sort()
 		
