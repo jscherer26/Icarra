@@ -506,10 +506,6 @@ class PortfolioSettingsWidget(QWidget):
 		confirm = box.exec_()
 		if confirm == QMessageBox.Ok:
 			self.app.portfolio.delete(self.app.prefs)
+			del self.app.portfolioMenuNames[self.app.portfolio.name]
 			self.app.loadPortfolio("S&P 500")
 			self.app.rebuildPortfoliosMenu()
-			ports = self.app.prefs.getPortfolios()
-			if len(ports) > 0:
-				self.app.loadPortfolio(ports[0])
-			else:
-				self.app.loadPortfolio("")

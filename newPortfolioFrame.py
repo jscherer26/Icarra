@@ -29,6 +29,7 @@ from PyQt4.QtGui import *
 from prefs import *
 import appGlobal
 
+import datetime
 import re
 
 class NewPortfolio(QDialog):
@@ -102,7 +103,6 @@ class NewPortfolio(QDialog):
 		prefs.setLastPortfolio(newName)
 		app.main.ts.selectTool("Settings")
 		app.loadPortfolio(newName)
-		app.rebuildPortfoliosMenu()
 
 		if self.benchmark.isChecked():
 			app.portfolio.makeBenchmark()
@@ -113,8 +113,12 @@ class NewPortfolio(QDialog):
 		elif self.bank.isChecked():
 			app.portfolio.makeBank()
 			app.loadPortfolio(newName)
+
+		if self.benchmark.isChecked():
+			app.portfolioMenuNames[newName] = "benchmark"
 		else:
-			app.loadPortfolio(newName)
+			app.portfolioMenuNames[newName] = "other"
+		app.rebuildPortfoliosMenu()
 
 		self.setCursor(Qt.ArrowCursor)
 		self.close()

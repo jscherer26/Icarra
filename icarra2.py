@@ -353,7 +353,7 @@ class Icarra2(QApplication):
 		
 		# The current statusUpdate dialog, if any
 		self.statusUpdate = False
-
+		
 		# Initialize members
 		self.prefs = prefs
 		self.stockData = StockData()
@@ -368,6 +368,11 @@ class Icarra2(QApplication):
 
 		# Make sure benchmarks have been created
 		checkBenchmarks(prefs)
+		
+		# Dictionary of portfolios used for rebuilding portfolio menu
+		# So we don't have to open portfolios every time
+		# Key is portfolio name, value is portfolio type ("benchmark", "bank", "brokerage", "combined")
+		self.buildPortfolioMenuNames()
 		
 		# Nothing else if regression
 		if "--regression" in args[0] or "--broker-info" in args[0] or "--rebuild" in args[0] or "--import" in args[0]:
@@ -540,7 +545,7 @@ class Icarra2(QApplication):
 	def loadPortfolio(self, name):
 		global prefs
 		prefs.setLastPortfolio(name)
-		
+				
 		# Remove old portfolio
 		if self.portfolio:
 			del self.portfolio
@@ -601,10 +606,22 @@ class Icarra2(QApplication):
 		update.setSubTask(100)
 		p.rebuildPositionHistory(app.stockData, update)
 		update.finishSubTask("Finished rebuilding " + p.name)
+	
+	def buildPortfolioMenuNames(self):
+		self.portfolioMenuNames = {}
+		for name in prefs.getPortfolios():
+			p = Portfolio(name)
+			if not p:
+				continue
+
+			if p.isBenchmark():
+				self.portfolioMenuNames[name] = "benchmark"
+			else:
+				self.portfolioMenuNames[name] = "other"
+			
 
 	def rebuildPortfoliosMenu(self, load = True):
 		global prefs
-		portfolios = sorted(prefs.getPortfolios())
 		
 		# Add or clear menu
 		if "portfoliosMenu" in dir(self):
@@ -634,21 +651,17 @@ class Icarra2(QApplication):
 		benchmarks = []
 		addedPort = False
 		self.portfolioActions = {}
-		for name in portfolios:
-			p = Portfolio(name)
-			if not p:
-				continue
-			name = name.replace("&", "&&")
+		for name in sorted(self.portfolioMenuNames.keys()):
 			self.portfolioActions[name] = QAction(name, self)
 
-			a = QAction(name, self.main)
+			a = QAction(name.replace("&", "&&"), self.main)
 			a.setCheckable(True)
-			if p.isBenchmark():
+			if self.portfolioMenuNames[name] == "benchmark":
 				benchmarks.append(a)
 			else:
 				self.portfoliosMenu.addAction(a)
 				addedPort = True
-			if p.name == prefs.getLastPortfolio():
+			if name == prefs.getLastPortfolio():
 				a.setChecked(True)
 		if addedPort and len(benchmarks) > 0:
 			self.portfoliosMenu.addSeparator()
