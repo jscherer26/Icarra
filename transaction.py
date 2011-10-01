@@ -602,7 +602,7 @@ class Transaction:
 		Format a floating point value as a dollar value
 		'''
 
-		return "$" + Transaction.formatFloat(value, commas = True)
+		return locale.currency(value, grouping = True)
 
 	def formatPricePerShare(self):
 		if not self.pricePerShare or self.pricePerShare == "False":
