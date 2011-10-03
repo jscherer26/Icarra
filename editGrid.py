@@ -147,6 +147,8 @@ class EditGridModel(QAbstractTableModel):
 								return QVariant(appGlobal.getApp().negativeColor)
 						except:
 							return QVariant()
+		elif role == Qt.TextAlignmentRole: 
+			return QVariant(Qt.AlignRight | Qt.AlignCenter)
 		elif role != Qt.DisplayRole: 
 			return QVariant()
 		if row < len(self.myData):
