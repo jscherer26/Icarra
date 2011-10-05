@@ -46,15 +46,15 @@ class SynchronizerPassword(QDialog):
 	def __init__(self, name, parent = None, badPassword = False, badUsername = False):
 		QDialog.__init__(self, parent)
 		self.app = appGlobal.getApp()
-		self.setWindowTitle("Log in to " + name)
+		self.setWindowTitle("Login to " + name)
 		self.name = name
 		
 		layout = QVBoxLayout(self)
 		
 		if badPassword:
-			layout.addWidget(QLabel("<b>Incorrect log in for " + name + "</b>"))
+			layout.addWidget(QLabel("<b>Incorrect login for " + name + "</b>"))
 		else:
-			layout.addWidget(QLabel("<b>Log in to " + name + "</b>"))
+			layout.addWidget(QLabel("<b>Login to " + name + "</b>"))
 		layout.addSpacing(5)
 
 		grid = QGridLayout()
