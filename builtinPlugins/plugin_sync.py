@@ -106,7 +106,7 @@ class SynchronizerPassword(QDialog):
 		buttons.addStretch(1)
 		cancel = QPushButton("Cancel")
 		buttons.addWidget(cancel)
-		self.connect(cancel, SIGNAL("clicked()"), SLOT("reject()"))
+		self.connect(cancel, SIGNAL("clicked()"), self.cancel)
 		
 		ok = QPushButton("OK")
 		ok.setDefault(True)
@@ -125,6 +125,12 @@ class SynchronizerPassword(QDialog):
 				keyring.set_password("Icarra-site-" + self.name, "password", "")
 
 		self.accept()
+
+	def cancel(self):
+		# Clear input fields and reject
+		self.username.setText("")
+		self.password.setText("")
+		self.reject()
 		
 class Synchronizer:
 	def __init__(self, portfolio):
@@ -159,7 +165,7 @@ class Synchronizer:
 		# Get login info
 		self.getLogin()
 		if self.aborted:
-			status.close()
+			status.onCancel()
 			return
 		
 		self.login()
@@ -558,5 +564,10 @@ class SyncWidget(QWidget):
 	
 	def sync(self):
 		sync = self.app.portfolio.portPrefs.getSync()
+
+		if not sync:
+			QMessageBox(QMessageBox.Information, 'Nothing Chosen', 'Please choose an online service to sync your portfolio with.').exec_()
+			return
+
 		if "icarra" in sync:
 			IcarraSynchronizer(self.app.portfolio).sync()
