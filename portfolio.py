@@ -532,7 +532,7 @@ class Portfolio:
 			return sorted(categories)
 		else:
 			# If no categories (first time called) insert
-			defaultCategories = ["Charity", "Childcare", "Clothing", "Debt Repayment", "Eating Out", "Entertainment", "Fees & Interest", "Groceries", "Health & Fitness", "Hobbies", "Housing", "Luxuries", "Medical & Dental", "Miscellaneous", "Pets", "Savings & Investmentments", "Transportation", "Uncategorized", "Utilities", "Vacations"]
+			defaultCategories = ["Charity", "Childcare", "Clothing", "Debt Repayment", "Eating Out", "Entertainment", "Fees & Interest", "Groceries", "Health & Fitness", "Hobbies", "Housing", "Luxuries & Gifts", "Medical & Dental", "Miscellaneous", "Pets", "Savings & Investmentments", "Transportation", "Uncategorized", "Utilities", "Vacations"]
 			self.db.beginTransaction()
 			for c in defaultCategories:
 				self.db.insert("availCategories", {"category": c})

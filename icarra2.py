@@ -88,7 +88,7 @@ from helpFrame import *
 from aboutDialog import *
 from splashScreenFrame import *
 from newPortfolioFrame import *
-from newVersionFrame import *
+import newVersionFrame
 from ofxDebugFrame import *
 from prefsFrame import *
 import tutorial
@@ -100,7 +100,8 @@ import autoUpdater
 import plugin
 import feedparser
 import chartWidget
-import webBrowser
+import webbrowser
+import icarraWebBrowser
 
 class ToolSelectorDelegate(QItemDelegate):
 	def __init__(self, parent):
@@ -333,6 +334,9 @@ class Icarra2(QApplication):
 		self.setApplicationName('Icarra2')
 		self.setQuitOnLastWindowClosed(False)
 
+		# Set locale one more time, QT may override it
+		locale.setlocale(locale.LC_ALL, "")
+
 		# Set global app and path
 		if hasattr(sys, "frozen"):
 			appPath = os.path.dirname(sys.argv[0])
@@ -377,7 +381,7 @@ class Icarra2(QApplication):
 		# Nothing else if regression
 		if "--regression" in args[0] or "--broker-info" in args[0] or "--rebuild" in args[0] or "--import" in args[0]:
 			return
-	
+
 		self.plugins = PluginManager()
 		
 		timesRun = prefs.getTimesRun()
@@ -687,7 +691,7 @@ class Icarra2(QApplication):
 			# Check if skipped
 			(skipMajor, skipMinor, skipRelease) = self.prefs.getIgnoreVersion()
 			if newMajor != skipMajor or newMinor != skipMinor or newRelease != skipRelease:
-				d = NewVersion(newMajor, newMinor, newRelease)
+				d = newVersionFrame.NewVersion(newMajor, newMinor, newRelease)
 
 	def startOfxDebug(self):
 		if self.ofxDebugFrame:

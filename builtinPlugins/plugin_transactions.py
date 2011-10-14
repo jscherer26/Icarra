@@ -32,7 +32,7 @@ from statusUpdate import *
 import appGlobal
 import tutorial
 import autoUpdater
-from webBrowser import *
+from icarraWebBrowser import *
 
 try:
 	import keyring

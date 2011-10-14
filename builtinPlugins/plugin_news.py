@@ -32,7 +32,7 @@ import feedparser
 from editGrid import *
 from statusUpdate import *
 from plugin import *
-from webBrowser import *
+from icarraWebBrowser import *
 
 class Plugin(PluginBase):
 	def name(self):
