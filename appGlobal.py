@@ -26,7 +26,7 @@
 # gMajorVersion.gMinorVersion.gRelease
 gMajorVersion = 0
 gMinorVersion = 6
-gRelease = 0
+gRelease = 1
 
 global app
 app = False

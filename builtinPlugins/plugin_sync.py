@@ -36,6 +36,7 @@ import appGlobal
 import chart
 import tutorial
 
+global haveKeyring
 try:
 	import keyring
 	haveKeyring = True
@@ -44,6 +45,7 @@ except:
 
 class SynchronizerPassword(QDialog):
 	def __init__(self, name, parent = None, badPassword = False, badUsername = False):
+		global haveKeyring
 		QDialog.__init__(self, parent)
 		self.app = appGlobal.getApp()
 		self.setWindowTitle("Login to " + name)
@@ -80,9 +82,14 @@ class SynchronizerPassword(QDialog):
 			hbox2.addWidget(self.savePassword)
 			layout.addSpacing(5)
 
-			password = keyring.get_password("Icarra-site-" + name, "password")
-			if password:
-				self.savePassword.setChecked(True)
+			try:
+				password = keyring.get_password("Icarra-site-" + name, "password")
+				if password:
+					self.savePassword.setChecked(True)
+			except:
+				haveKeyring = False
+				self.password.setDisabled(True)
+				self.savePassword.setDisabled(True)
 
 		self.username.setFocus()
 
@@ -92,13 +99,16 @@ class SynchronizerPassword(QDialog):
 			self.username.setText(badUsername)
 			self.password.setFocus()
 		elif haveKeyring:
-			username = keyring.get_password("Icarra-site-" + name, "username")
-			if username:
-				self.username.setText(username)
-
-			password = keyring.get_password("Icarra-site-" + name, "password")
-			if password:
-				self.password.setText(password)
+			try:
+				username = keyring.get_password("Icarra-site-" + name, "username")
+				if username:
+					self.username.setText(username)
+	
+				password = keyring.get_password("Icarra-site-" + name, "password")
+				if password:
+					self.password.setText(password)
+			except:
+				haveKeyring = False
 				
 		buttons = QHBoxLayout()
 		layout.addLayout(buttons)
@@ -116,13 +126,17 @@ class SynchronizerPassword(QDialog):
 		self.status = self.exec_()
 	
 	def onOk(self):
+		global haveKeyring
 		if haveKeyring:
-			if self.savePassword.isChecked():
-				keyring.set_password("Icarra-site-" + self.name, "username", str(self.username.text()))
-				keyring.set_password("Icarra-site-" + self.name, "password", str(self.password.text()))
-			else:
-				keyring.set_password("Icarra-site-" + self.name, "username", "")
-				keyring.set_password("Icarra-site-" + self.name, "password", "")
+			try:
+				if self.savePassword.isChecked():
+					keyring.set_password("Icarra-site-" + self.name, "username", str(self.username.text()))
+					keyring.set_password("Icarra-site-" + self.name, "password", str(self.password.text()))
+				else:
+					keyring.set_password("Icarra-site-" + self.name, "username", "")
+					keyring.set_password("Icarra-site-" + self.name, "password", "")
+			except:
+				haveKeyring = False
 
 		self.accept()
 
@@ -142,14 +156,18 @@ class Synchronizer:
 		self.syncByIds = False # If we have transaction ids
 	
 	def getLogin(self, badPassword = False, badUsername = False):
+		global haveKeyring
 		# Try to get saved password
 		if haveKeyring and not badPassword:
-			username = keyring.get_password("Icarra-site-" + self.name, "username")
-			password = keyring.get_password("Icarra-site-" + self.name, "password")
-			if username and password:
-				self.username = username
-				self.password = password
-				return
+			try:
+				username = keyring.get_password("Icarra-site-" + self.name, "username")
+				password = keyring.get_password("Icarra-site-" + self.name, "password")
+				if username and password:
+					self.username = username
+					self.password = password
+					return
+			except:
+				haveKeyring = False
 		
 		p = SynchronizerPassword(self.name, badPassword = badPassword, badUsername = badUsername)
 		if p.status and p.username.text() and p.password.text():

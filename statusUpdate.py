@@ -108,7 +108,7 @@ class StatusUpdate(QDialog):
 		# Set global status update
 		app = appGlobal.getApp()
 		if app.statusUpdate:
-			app.statusUpdate.addError("Multiple status updates")
+			raise Exception("Multiple status updates")
 		else:
 			app.statusUpdate = self
 

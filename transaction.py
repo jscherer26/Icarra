@@ -357,6 +357,22 @@ class Transaction:
 	def formatDate(self):
 		return str(self.date.month) + "/" + str(self.date.day) + "/" + str(self.date.year)
 	
+	@staticmethod
+	def formatDays(days):
+		if days > 365:
+			val = days / 365.0
+			desc = 'year'
+		elif days > 30:
+			val = days / 30.0
+			desc = 'month'
+		else:
+			val = days
+			desc = 'day'
+		if val == 1:
+			return '%.1f %s' % (val, desc)
+		else:
+			return '%.1f %ss' % (val, desc)
+	
 	def dateDict(self):
 		return dateDict(self.date)
 	
