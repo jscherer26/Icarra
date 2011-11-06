@@ -32,6 +32,7 @@ import appGlobal
 import chart
 import tutorial
 
+global haveKeyring
 try:
 	import keyring
 	haveKeyring = True
@@ -59,6 +60,7 @@ class Plugin(PluginBase):
 
 class TestImport(QDialog):
 	def __init__(self, parent = None):
+		global haveKeyring
 		QDialog.__init__(self, parent)
 		self.app = appGlobal.getApp()
 		self.setWindowTitle("Test login to " + self.app.portfolio.brokerage)
@@ -86,10 +88,15 @@ class TestImport(QDialog):
 			hbox2.addWidget(self.savePassword)
 			layout.addSpacing(10)
 
-			password = keyring.get_password("Icarra-ofx-" + self.app.portfolio.name, self.app.portfolio.username)
-			if password:
-				self.password.setText(password)
-				self.savePassword.setChecked(True)
+			try:
+				password = keyring.get_password("Icarra-ofx-" + self.app.portfolio.name, self.app.portfolio.username)
+				if password:
+					self.password.setText(password)
+					self.savePassword.setChecked(True)
+			except:
+				haveKeyring = False
+				self.password.setDisabled(True)
+				self.savePassword.setDisabled(True)
 		
 		self.password.setFocus()
 		

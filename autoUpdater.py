@@ -31,6 +31,7 @@ import traceback
 import appGlobal
 import portfolio
 
+global haveKeyring
 try:
 	import keyring
 	haveKeyring = True
@@ -61,6 +62,7 @@ class AutoUpdater(threading.Thread):
 		threading.Thread.__init__(self, name = "autoUpdater")
 	
 	def run(self):
+		global haveKeyring
 		app = appGlobal.getApp()
 		while self.running:
 			self.freshStart = False
@@ -107,8 +109,12 @@ class AutoUpdater(threading.Thread):
 							brokerage = app.plugins.getBrokerage(p.brokerage)
 							if not brokerage:
 								continue
-							password = keyring.get_password("Icarra-ofx-" + name, p.username)
-							if not password:
+							try:
+								password = keyring.get_password("Icarra-ofx-" + name, p.username)
+								if not password:
+									continue
+							except:
+								haveKeyring = False
 								continue
 							print "import from", name
 							# Get ofx data, update if not empty

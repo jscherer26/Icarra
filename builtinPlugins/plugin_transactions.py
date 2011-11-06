@@ -32,8 +32,9 @@ from statusUpdate import *
 import appGlobal
 import tutorial
 import autoUpdater
-from webBrowser import *
+from icarraWebBrowser import *
 
+global haveKeyring
 try:
 	import keyring
 	haveKeyring = True
@@ -164,6 +165,7 @@ class AccountSelector(QDialog):
 
 class Import(QDialog):
 	def __init__(self, parent = None):
+		global haveKeyring
 		QDialog.__init__(self, parent)
 		self.setWindowTitle("Import Transactions")
 		
@@ -208,10 +210,15 @@ class Import(QDialog):
 			hbox2.addWidget(self.savePassword)
 			layout.addSpacing(10)
 
-			password = keyring.get_password("Icarra-ofx-" + portfolio.name, portfolio.username)
-			if password:
-				self.password.setText(password)
-				self.savePassword.setChecked(True)
+			try:
+				password = keyring.get_password("Icarra-ofx-" + portfolio.name, portfolio.username)
+				if password:
+					self.password.setText(password)
+					self.savePassword.setChecked(True)
+			except:
+				haveKeyring = False
+				self.password.setDisabled(True)
+				self.savePassword.setDisabled(True)
 
 		self.file = QRadioButton("Import from file", self)
 		self.connect(self.file, SIGNAL("toggled(bool)"), self.radio)

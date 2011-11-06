@@ -1,3 +1,5 @@
+import appGlobal
+
 from transaction import *
 
 class Basis:
@@ -20,7 +22,7 @@ class Basis:
 			print "no basis for", ticker, quantity
 			return
 		# Keep looping until we have removed all quantity
-		while quantity > 0:
+		while quantity > 1.0e-6:
 			# Find minimum date
 			minDate = False
 			for ts in self.tickers[ticker].itervalues():
@@ -47,10 +49,10 @@ class Basis:
 							del self.tickers[ticker][pricePerShare]
 						if len(self.tickers[ticker]) == 0:
 							del self.tickers[ticker]
-							if quantity != 0:
+							if quantity > 1.0e-6:
 								app = appGlobal.getApp()
 								if app and app.statusUpdate:
-									app.statusUpdate.addMessage("Left over quantity " + ticker + " " + quantity)
+									app.statusUpdate.addMessage("Left over quantity %s %f" % (ticker, quantity))
 								return
 					else:
 						# Remove some shares

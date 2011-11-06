@@ -532,7 +532,7 @@ class Portfolio:
 			return sorted(categories)
 		else:
 			# If no categories (first time called) insert
-			defaultCategories = ["Charity", "Childcare", "Clothing", "Debt Repayment", "Eating Out", "Entertainment", "Fees & Interest", "Groceries", "Health & Fitness", "Hobbies", "Housing", "Luxuries", "Medical & Dental", "Miscellaneous", "Pets", "Savings & Investmentments", "Transportation", "Uncategorized", "Utilities", "Vacations"]
+			defaultCategories = ["Charity", "Childcare", "Clothing", "Debt Repayment", "Eating Out", "Entertainment", "Fees & Interest", "Groceries", "Health & Fitness", "Hobbies", "Housing", "Luxuries & Gifts", "Medical & Dental", "Miscellaneous", "Pets", "Savings & Investmentments", "Transportation", "Uncategorized", "Utilities", "Vacations"]
 			self.db.beginTransaction()
 			for c in defaultCategories:
 				self.db.insert("availCategories", {"category": c})
@@ -1708,6 +1708,7 @@ class Portfolio:
 				while d in optionsBasis and i < len(optionsBasis[d]):
 					(ignoreTicker, s, pps, str, e) = optionsBasis[d][i]
 					if str != strike or e != expire:
+						i += 1
 						continue
 					
 					if s > remove:
@@ -2236,7 +2237,11 @@ class Portfolio:
 								raise Exception("Invalid split value for %s" % t)
 							shares += adjustShares
 							adjustBasisStockDividend(ticker, adjustShares)
-							twrr.addShares(ticker, adjustShares, 0)
+							
+							if adjustShares > 0:
+								twrr.addShares(ticker, adjustShares, 0)
+							else:
+								twrr.removeShares(ticker, -adjustShares, 0)
 						elif t.type == Transaction.adjustment:
 							adjustedValue += t.getTotal()
 							twrr.addAdjustment(t.getTotal())
@@ -3414,7 +3419,7 @@ class Portfolio:
 			elif date == fiveYear:
 				cols.append("Five Years")
 			elif date == lastDay:
-				cols.append("Since Inception (zz)")
+				cols.append("Since Inception")
 
 		tickers.sort()
 		

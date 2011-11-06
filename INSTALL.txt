@@ -8,13 +8,16 @@ The following commands will install the required libraries:
 sudo apt-get install python-dev
 sudo apt-get install python-qt
 
-Download sgmlop from http://effbot.org/zone/sgmlop-index.htm
+cd icarra2/installed/sgmlop
 sudo python setup.py install
 
-Download python-jsonrpc from http://json-rpc.org/wiki/python-json-rpc
+cd icarra2/installed/python-jsonrpc
 sudo python setup.py install
 
-Download feedparser from http://www.feedparser.org/
+cd icarra2/installed/feedparser
+sudo python setup.py install
+
+cd icarra2/installed/keyring
 sudo python setup.py install
 
 Sqlite3 is a useful tool that can be used to view Icarra's databases:
@@ -26,20 +29,49 @@ Windows
 
 Download and install PyQt from Riverbank computing.  The most recent url is http://www.riverbankcomputing.co.uk/software/pyqt/download.  You can build from sourec or use the installer.  If you choose to download the installer make sure you pick the correct installer for your version of python.
 
-You need to make sure the PyQt DLLs are in your path.  If you are using the bashs shell under cygwin the command might look like this:
+You must make sure that the PyQt DLLs are in your path.  The command will look like this If you are using the bashs shell under cygwin:
 
     export PATH="{$PATH}:/cygdrive/c/Python26/Lib/site-packages/PyQt4/bin"
 
-Download sgmlop from http://effbot.org/zone/sgmlop-index.htm
+cd icarra2/installed/sgmlop
 sudo python setup.py install
 
-Download python-jsonrpc from http://json-rpc.org/wiki/python-json-rpc
+cd icarra2/installed/python-jsonrpc
 sudo python setup.py install
 
-Download feedparser from http://www.feedparser.org/
+cd icarra2/installed/feedparser
+sudo python setup.py install
+
+cd icarra2/installed/keyring
 sudo python setup.py install
 
 OS X
 ----
 
-Same instructions as windows.  Do not need to set PATH.
+It is recommended to not use the python that is bundled with OS X.  The Icarra OS X binary is built using python 2.7 from MacPorts.
+
+Download and install the PyQt and SIP source from Riverbank computing.  The most recent url is http://www.riverbankcomputing.co.uk/software/pyqt/download.  You must build and install from source.
+
+From the sip directory:
+
+    python2.7 configure.py
+    make
+    sudo make install
+
+From the qt directory:
+
+    python2.7 configure.py --sipdir=/opt/local/Library/Frameworks/Python.framework/Versions/2.7/lib/python2.7/site-packages/
+    make
+    sudo make install
+
+cd icarra2/installed/sgmlop
+sudo python2.7 setup.py install
+
+cd icarra2/installed/python-jsonrpc
+sudo python2.7 setup.py install
+
+cd icarra2/installed/feedparser
+sudo python2.7 setup.py install
+
+cd icarra2/installed/keyring
+sudo python2.7 setup.py install
